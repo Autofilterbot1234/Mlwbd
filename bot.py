@@ -30,6 +30,8 @@ DEVELOPER_USER_LINK = os.environ.get("DEVELOPER_USER_LINK")
 # ======================================================================
 # ওয়েবসাইটের নাম পরিবর্তনের জন্য শুধু এই লাইনটি এডিট করুন
 SITE_NAME = "MovieFlix"
+# MongoDB Atlas Search এর জন্য আপনার তৈরি করা ইনডেক্সের নাম
+ATLAS_SEARCH_INDEX_NAME = "searchMovies" 
 
 # --- প্রয়োজনীয় ভেরিয়েবলগুলো সেট করা হয়েছে কিনা তা পরীক্ষা করা ---
 required_vars = {
@@ -40,11 +42,9 @@ required_vars = {
     "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK,
     "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
 }
-
 missing_vars = [name for name, value in required_vars.items() if not value]
 if missing_vars:
     print(f"FATAL: Missing required environment variables: {', '.join(missing_vars)}")
-    print("Please set these variables in your deployment environment and restart the application.")
     sys.exit(1)
 
 # ======================================================================
@@ -55,10 +55,8 @@ app = Flask(__name__)
 
 def check_auth(username, password):
     return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
-
 def authenticate():
     return Response('Could not verify your access level.', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
-
 def requires_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -83,8 +81,8 @@ except Exception as e:
 def inject_global_vars():
     ad_codes = settings.find_one()
     return dict(
-        ad_settings=(ad_codes or {}),
-        bot_username=BOT_USERNAME,
+        ad_settings=(ad_codes or {}), 
+        bot_username=BOT_USERNAME, 
         main_channel_link=MAIN_CHANNEL_LINK,
         site_name=SITE_NAME
     )
@@ -211,20 +209,16 @@ index_html = """
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
 </head>
 <body>
-
 <div class="search-overlay" id="search-overlay">
     <span class="close-search" id="close-search">×</span>
     <form method="GET" action="/" class="search-form">
         <input type="search" name="q" class="search-input" placeholder="Search for movies, series..." value="{{ query|default('') }}" autofocus/>
     </form>
 </div>
-
 <header class="main-nav">
   <a href="{{ url_for('home') }}" class="logo">{{ site_name }}</a>
   <div class="nav-actions">
-    <form method="GET" action="/" class="search-form">
-      <input type="search" name="q" class="search-input" placeholder="Search..." value="{{ query|default('') }}" />
-    </form>
+    <form method="GET" action="/" class="search-form"><input type="search" name="q" class="search-input" placeholder="Search..." value="{{ query|default('') }}" /></form>
     <i class="fas fa-search search-icon-mobile" id="search-icon-mobile"></i>
   </div>
 </header>
@@ -237,42 +231,26 @@ index_html = """
            {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
            {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
         </div>
-        <div class="card-info-static">
-          <h4 class="card-info-title">{{ m.title }}</h4>
-          {% if m.release_date %}<p class="card-info-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}
-        </div>
+        <div class="card-info-static"><h4 class="card-info-title">{{ m.title }}</h4>{% if m.release_date %}<p class="card-info-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}</div>
       </div>
     </a>
   {% endmacro %}
-  
   {% macro render_skeleton_card() %}
     <div class="skeleton-card">
         <div class="skeleton-poster"></div>
-        <div class="skeleton-info">
-            <div class="skeleton-title"></div>
-            <div class="skeleton-meta"></div>
-        </div>
+        <div class="skeleton-info"><div class="skeleton-title"></div><div class="skeleton-meta"></div></div>
     </div>
   {% endmacro %}
 
   {% if is_full_page_list %}
     <div class="full-page-grid-container">
         <h2 class="full-page-grid-title">{{ query }}</h2>
-        {% if movies|length > 0 %}
-            <div class="full-page-grid">
-                {% for m in movies %}
-                    {{ render_movie_card(m) }}
-                {% endfor %}
-            </div>
-        {% else %}
-            <p style="text-align:center; color: var(--text-dark); margin-top: 40px;">No content found.</p>
-        {% endif %}
+        {% if movies|length > 0 %}<div class="full-page-grid">{% for m in movies %}{{ render_movie_card(m) }}{% endfor %}</div>
+        {% else %}<p style="text-align:center; color: var(--text-dark); margin-top: 40px;">No content found.</p>{% endif %}
     </div>
   {% else %}
     {% if all_badges %}<div class="tags-section"><div class="tags-container">{% for badge in all_badges %}<a href="{{ url_for('movies_by_badge', badge_name=badge) }}" class="tag-link">{{ badge }}</a>{% endfor %}</div></div>{% endif %}
-    
     {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.backdrop or movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_link and not movie.is_coming_soon %}<a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
-
     {% macro render_grid_section(title, movies_list, endpoint, skeleton_count=6) %}
         <div class="category-section">
             <div class="category-header">
@@ -280,17 +258,11 @@ index_html = """
                 {% if movies_list %}<a href="{{ url_for(endpoint) }}" class="see-all-link">See All ></a>{% endif %}
             </div>
             <div class="category-grid">
-                {% if movies_list %}
-                    {% for m in movies_list %}
-                        {{ render_movie_card(m) }}
-                    {% endfor %}
-                {% else %}
-                    {% for i in range(skeleton_count) %}{{ render_skeleton_card() }}{% endfor %}
-                {% endif %}
+                {% if movies_list %}{% for m in movies_list %}{{ render_movie_card(m) }}{% endfor %}
+                {% else %}{% for i in range(skeleton_count) %}{{ render_skeleton_card() }}{% endfor %}{% endif %}
             </div>
         </div>
     {% endmacro %}
-
     {{ render_grid_section('Trending Now', trending_movies, 'trending_movies') }}
     {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
     {{ render_grid_section('Latest Movies', latest_movies, 'movies_only') }}
@@ -298,10 +270,8 @@ index_html = """
     {{ render_grid_section('Web Series', latest_series, 'webseries') }}
     {{ render_grid_section('Recently Added', recently_added_full, 'recently_added_all') }}
     {{ render_grid_section('Coming Soon', coming_soon_movies, 'coming_soon') }}
-    
     <div class="telegram-join-section">
-        <i class="fa-brands fa-telegram telegram-icon"></i>
-        <h2>Join Our Telegram Channel</h2>
+        <i class="fa-brands fa-telegram telegram-icon"></i><h2>Join Our Telegram Channel</h2>
         <p>Get the latest movie updates, news, and direct download links right on your phone!</p>
         <a href="{{ main_channel_link or '#' }}" target="_blank" class="telegram-join-button"><i class="fa-brands fa-telegram"></i> Join Main Channel</a>
     </div>
@@ -318,20 +288,17 @@ index_html = """
     document.addEventListener('DOMContentLoaded', function() {
         const nav = document.querySelector('.main-nav');
         window.addEventListener('scroll', () => { window.scrollY > 50 ? nav.classList.add('scrolled') : nav.classList.remove('scrolled'); });
-
         const slides = document.querySelectorAll('.hero-slide');
         if (slides.length > 1) {
             let currentSlide = 0;
             const showSlide = (index) => slides.forEach((s, i) => s.classList.toggle('active', i === index));
             setInterval(() => { currentSlide = (currentSlide + 1) % slides.length; showSlide(currentSlide); }, 5000);
         }
-
         const searchIcon = document.getElementById('search-icon-mobile');
         const searchOverlay = document.getElementById('search-overlay');
         const closeSearch = document.getElementById('close-search');
         if (searchIcon) searchIcon.addEventListener('click', () => searchOverlay.classList.add('active'));
         if (closeSearch) closeSearch.addEventListener('click', () => searchOverlay.classList.remove('active'));
-
         var lazyImages = [].slice.call(document.querySelectorAll("img.movie-poster[data-src]"));
         if ("IntersectionObserver" in window) {
             let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
@@ -344,9 +311,7 @@ index_html = """
                 });
             });
             lazyImages.forEach(function(lazyImage) { lazyImageObserver.observe(lazyImage); });
-        } else {
-            lazyImages.forEach(img => img.src = img.dataset.src);
-        }
+        } else { lazyImages.forEach(img => img.src = img.dataset.src); }
     });
 </script>
 {% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
@@ -389,7 +354,6 @@ detail_html = """
   .download-section, .episode-section { margin-top: 30px; }
   .download-button, .episode-button { display: inline-block; padding: 12px 25px; background-color: #444; color: white; text-decoration: none; border-radius: 4px; font-weight: 700; transition: background-color 0.3s ease; margin-right: 10px; margin-bottom: 10px; text-align: center; vertical-align: middle; }
   .copy-button { background-color: #555; color: white; border: none; padding: 8px 15px; font-size: 0.9rem; cursor: pointer; border-radius: 4px; margin-left: -5px; margin-bottom: 10px; vertical-align: middle; }
-  
   .season-accordion details { background: #1a1a1a; margin-bottom: 10px; border-radius: 5px; overflow: hidden; }
   .season-accordion summary { padding: 15px; font-size: 1.2rem; font-weight: 700; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
   .season-accordion summary::-webkit-details-marker { display: none; }
@@ -399,7 +363,6 @@ detail_html = """
   .episode-list { padding: 5px 10px 10px 10px; }
   .episode-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 15px; border-radius: 5px; background-color: #252525; }
   .episode-title { font-size: 1.1rem; font-weight: 500; color: #fff; }
-  
   .ad-container { margin: 30px 0; text-align: center; }
   .related-section-container { padding: 40px 0; background-color: #181818; }
   .related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; padding: 0 50px; }
@@ -407,21 +370,15 @@ detail_html = """
   .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
   .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
   .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
-  @keyframes rgb-glow { 0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; } 33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; } 66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; } }
-  .poster-badge { position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); animation: rgb-glow 3s linear infinite; }
-  .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
-  .rating-badge .fa-star { color: #f5c518; }
   .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
   .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
-  @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
   @media (max-width: 992px) { .detail-content-wrapper { flex-direction: column; align-items: center; text-align: center; } .detail-info { max-width: 100%; } .detail-title { font-size: 3.5rem; } }
   @media (max-width: 768px) { .detail-header { padding: 20px; } .detail-hero { padding: 80px 20px 40px; } .detail-poster { width: 60%; max-width: 220px; height: auto; } .detail-title { font-size: 2.2rem; }
   .action-btn, .download-button { display: block; width: 100%; max-width: 320px; margin: 0 auto 10px auto; }
   .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-button { width: 100%; }
   .section-title { margin-left: 15px !important; } .related-section-container { padding: 20px 0; }
   .related-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; padding: 0 15px; } }
-  
   .toast { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); background-color: #333; color: white; padding: 12px 25px; border-radius: 50px; z-index: 1001; transition: bottom 0.5s ease; font-size: 0.9rem; }
   .toast.show { bottom: 30px; }
 </style>
@@ -429,22 +386,6 @@ detail_html = """
 </head>
 <body>
 <div id="toast-notification" class="toast"></div>
-
-{% macro render_movie_card(m) %}
-  <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
-    <div class="poster-wrapper">
-      <div class="movie-poster-container">
-        <img class="movie-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
-        {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
-        {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
-      </div>
-      <div class="card-info-static">
-        <h4 class="card-info-title">{{ m.title }}</h4>
-        {% if m.release_date %}<p class="card-info-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}
-      </div>
-    </div>
-  </a>
-{% endmacro %}
 <header class="detail-header"><a href="{{ url_for('home') }}" class="back-button"><i class="fas fa-arrow-left"></i> Back to Home</a></header>
 {% if movie %}
 <div class="detail-hero" style="min-height: auto; padding-bottom: 60px;">
@@ -480,7 +421,6 @@ detail_html = """
     </div>
   </div>
 </div>
-{% if related_movies %}<div class="related-section-container"><h3 class="section-title" style="margin-left: 50px; color: white;">You Might Also Like</h3><div class="related-grid">{% for m in related_movies %}{{ render_movie_card(m) }}{% endfor %}</div></div>{% endif %}
 {% else %}<div style="display:flex; justify-content:center; align-items:center; height:100vh;"><h2>Content not found.</h2></div>{% endif %}
 <script>
 function showToast(message) {
@@ -491,8 +431,6 @@ function showToast(message) {
 }
 function copyToClipboard(text) { navigator.clipboard.writeText(text).then(() => { showToast('Link copied!'); }, () => { showToast('Copy failed!'); }); }
 </script>
-{% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
-{% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
 </body>
 </html>
 """
@@ -514,8 +452,6 @@ genres_html = """
 <body>
 <div class="main-container"><a href="{{ url_for('home') }}" class="back-button"><i class="fas fa-arrow-left"></i> Back to Home</a><h1 class="page-title">{{ title }}</h1>
 <div class="genre-grid">{% for genre in genres %}<a href="{{ url_for('movies_by_genre', genre_name=genre) }}" class="genre-card"><span>{{ genre }}</span></a>{% endfor %}</div></div>
-{% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
-{% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
 </body></html>
 """
 
@@ -524,8 +460,6 @@ watch_html = """
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Watching: {{ title }}</title>
 <style> body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; } .player-container { width: 100%; height: 100%; } .player-container iframe { width: 100%; height: 100%; border: 0; } </style></head>
 <body><div class="player-container"><iframe src="{{ watch_link }}" allowfullscreen allowtransparency allow="autoplay" scrolling="no" frameborder="0"></iframe></div>
-{% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
-{% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
 </body></html>
 """
 
@@ -537,73 +471,19 @@ body { font-family: 'Roboto', sans-serif; background: var(--netflix-black); colo
 h2, h3 { font-family: 'Bebas Neue', sans-serif; color: var(--netflix-red); } h2 { font-size: 2.5rem; margin-bottom: 20px; } h3 { font-size: 1.5rem; margin: 20px 0 10px 0;}
 form { max-width: 800px; margin: 0 auto 40px auto; background: var(--dark-gray); padding: 25px; border-radius: 8px;}
 .form-group { margin-bottom: 15px; } .form-group label { display: block; margin-bottom: 8px; font-weight: bold; }
-input[type="text"], input[type="url"], input[type="search"], textarea, select, input[type="number"], input[type="email"] { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--light-gray); font-size: 1rem; background: var(--light-gray); color: var(--text-light); box-sizing: border-box; }
+input, textarea, select { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--light-gray); font-size: 1rem; background: var(--light-gray); color: var(--text-light); box-sizing: border-box; }
 input[type="checkbox"] { width: auto; margin-right: 10px; transform: scale(1.2); } textarea { resize: vertical; min-height: 100px; }
-button[type="submit"], .add-btn, .clear-btn { background: var(--netflix-red); color: white; font-weight: 700; cursor: pointer; border: none; padding: 12px 25px; border-radius: 4px; font-size: 1rem; transition: background 0.3s ease; text-decoration: none; }
-button[type="submit"]:hover, .add-btn:hover { background: #b00710; }
-.clear-btn { background: #555; display: inline-block; } .clear-btn:hover { background: #444; }
-table { display: block; overflow-x: auto; white-space: nowrap; width: 100%; border-collapse: collapse; margin-top: 20px; }
-th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--light-gray); } th { background: #252525; } td { background: var(--dark-gray); }
-.action-buttons { display: flex; gap: 10px; } .action-buttons a, .action-buttons button, .delete-btn { padding: 6px 12px; border-radius: 4px; text-decoration: none; color: white; border: none; cursor: pointer; }
-.edit-btn { background: #007bff; } .delete-btn { background: #dc3545; }
-.dynamic-item { border: 1px solid var(--light-gray); padding: 15px; margin-bottom: 15px; border-radius: 5px; }
+button[type="submit"], .add-btn, .clear-btn { background: var(--netflix-red); color: white; font-weight: 700; cursor: pointer; border: none; padding: 12px 25px; border-radius: 4px; font-size: 1rem; }
 hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray); margin: 40px 0; }
-.danger-zone { border: 2px solid var(--netflix-red); padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; }
-.danger-zone-btn { background: #dc3545; color: white; text-decoration: none; padding: 10px 20px; border-radius: 5px; font-weight: bold; }
 </style><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;700&display=swap" rel="stylesheet"></head>
 <body>
   <h2>বিজ্ঞাপন পরিচালনা (Ad Management)</h2>
-  <form action="{{ url_for('save_ads') }}" method="post"><div class="form-group"><label>Pop-Under / OnClick Ad Code</label><textarea name="popunder_code" rows="4">{{ ad_settings.popunder_code or '' }}</textarea></div><div class="form-group"><label>Social Bar / Sticky Ad Code</label><textarea name="social_bar_code" rows="4">{{ ad_settings.social_bar_code or '' }}</textarea></div><div class="form-group"><label>ব্যানার বিজ্ঞাপন কোড (Banner Ad)</label><textarea name="banner_ad_code" rows="4">{{ ad_settings.banner_ad_code or '' }}</textarea></div><div class="form-group"><label>নেটিভ ব্যানার বিজ্ঞাপন (Native Banner)</label><textarea name="native_banner_code" rows="4">{{ ad_settings.native_banner_code or '' }}</textarea></div><button type="submit">Save Ad Codes</button></form>
-  <hr class="section-divider">
-  <h2>Add New Content (Manual)</h2>
-  <form method="post" action="{{ url_for('admin') }}">
-    <div class="form-group"><label>Title (Required):</label><input type="text" name="title" required /></div>
-    <div class="form-group"><label>Content Type:</label><select name="content_type" id="content_type" onchange="toggleFields()"><option value="movie">Movie</option><option value="series">TV/Web Series</option></select></div>
-    <div id="movie_fields">
-      <div class="form-group"><label>Watch Link (Embed URL):</label><input type="url" name="watch_link" /></div><hr><p><b>OR</b> Download Links (Manual)</p>
-      <div class="form-group"><label>480p Link:</label><input type="url" name="link_480p" /></div>
-      <div class="form-group"><label>720p Link:</label><input type="url" name="link_720p" /></div>
-      <div class="form-group"><label>1080p Link:</label><input type="url" name="link_1080p" /></div>
-      <hr><p><b>OR</b> Get from Telegram</p>
-      <div id="telegram_files_container"></div><button type="button" onclick="addTelegramFileField()" class="add-btn">Add Telegram File</button>
-    </div>
-    <div id="episode_fields" style="display: none;">
-      <h3>Episodes</h3><div id="episodes_container"></div>
-      <button type="button" onclick="addEpisodeField()" class="add-btn">Add Episode</button>
-    </div>
-    <hr style="margin: 20px 0;"><button type="submit">Add Content</button>
-  </form>
+  <form action="{{ url_for('save_ads') }}" method="post"><div class="form-group"><label>Pop-Under Ad Code</label><textarea name="popunder_code" rows="4">{{ ad_settings.popunder_code or '' }}</textarea></div><div class="form-group"><label>Banner Ad Code</label><textarea name="banner_ad_code" rows="4">{{ ad_settings.banner_ad_code or '' }}</textarea></div><button type="submit">Save Ad Codes</button></form>
   <hr class="section-divider">
   <h2>Manage Content</h2>
-  <form method="GET" action="{{ url_for('admin') }}" style="padding: 15px; background: #252525; display: flex; gap: 10px; align-items: center;">
-    <input type="search" name="search" placeholder="Search by title..." value="{{ search_query or '' }}" style="flex-grow: 1;">
-    <button type="submit">Search</button>
-    {% if search_query %}<a href="{{ url_for('admin') }}" class="clear-btn">Clear</a>{% endif %}
-  </form>
   <table><thead><tr><th>Title</th><th>Type</th><th>Actions</th></tr></thead><tbody>
-    {% for movie in content_list %}
-    <tr><td>{{ movie.title }}</td><td>{{ movie.type | title }}</td><td class="action-buttons"><a href="{{ url_for('edit_movie', movie_id=movie._id) }}" class="edit-btn">Edit</a><button class="delete-btn" onclick="confirmDelete('{{ movie._id }}', '{{ movie.title }}')">Delete</button></td></tr>
-    {% else %}
-    <tr><td colspan="3" style="text-align: center;">No content found.</td></tr>
-    {% endfor %}
+    {% for movie in content_list %}<tr><td>{{ movie.title }}</td><td>{{ movie.type | title }}</td><td><a href="{{ url_for('edit_movie', movie_id=movie._id) }}">Edit</a> <a href="{{ url_for('delete_movie', movie_id=movie._id) }}" onclick="return confirm('Are you sure?')">Delete</a></td></tr>{% endfor %}
   </tbody></table>
-  
-  <div class="danger-zone">
-      <h3>DANGER ZONE</h3>
-      <p style="margin-bottom: 15px;">This will permanently delete all movies and series from the database. This action cannot be undone.</p>
-      <a href="{{ url_for('delete_all_movies') }}" class="danger-zone-btn" onclick="return confirm('ARE YOU ABSOLUTELY SURE?\\nThis will delete ALL content from the database permanently.\\nThis action cannot be undone.');">Delete All Content</a>
-  </div>
-
-  <hr class="section-divider">
-  <h2>User Feedback / Reports</h2>
-  {% if feedback_list %}<table><thead><tr><th>Date</th><th>Type</th><th>Title</th><th>Message</th><th>Email</th><th>Action</th></tr></thead><tbody>{% for item in feedback_list %}<tr><td style="min-width: 150px;">{{ item.timestamp.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ item.type }}</td><td>{{ item.content_title }}</td><td style="white-space: pre-wrap; min-width: 300px;">{{ item.message }}</td><td>{{ item.email or 'N/A' }}</td><td><a href="{{ url_for('delete_feedback', feedback_id=item._id) }}" class="delete-btn" onclick="return confirm('Delete this feedback?');">Delete</a></td></tr>{% endfor %}</tbody></table>{% else %}<p>No new feedback or reports.</p>{% endif %}
-  <script>
-    function confirmDelete(id, title) { if (confirm('Delete "' + title + '"?')) window.location.href = '/delete_movie/' + id; }
-    function toggleFields() { var isSeries = document.getElementById('content_type').value === 'series'; document.getElementById('episode_fields').style.display = isSeries ? 'block' : 'none'; document.getElementById('movie_fields').style.display = isSeries ? 'none' : 'block'; }
-    function addTelegramFileField() { const c = document.getElementById('telegram_files_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Quality (e.g., 720p):</label><input type="text" name="telegram_quality[]" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>`; c.appendChild(d); }
-    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><hr><p><b>Provide ONE of the following:</b></p><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><p><b>OR</b> Watch Link:</p><div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
-    document.addEventListener('DOMContentLoaded', toggleFields);
-  </script>
 </body></html>
 """
 
@@ -618,11 +498,10 @@ form { max-width: 800px; margin: 0 auto 40px auto; background: var(--dark-gray);
 input, textarea, select { width: 100%; padding: 12px; border-radius: 4px; border: 1px solid var(--light-gray); font-size: 1rem; background: var(--light-gray); color: var(--text-light); box-sizing: border-box; }
 input[type="checkbox"] { width: auto; margin-right: 10px; transform: scale(1.2); } textarea { resize: vertical; min-height: 100px; }
 button[type="submit"], .add-btn { background: var(--netflix-red); color: white; font-weight: 700; cursor: pointer; border: none; padding: 12px 25px; border-radius: 4px; font-size: 1rem; }
-.back-to-admin { display: inline-block; margin-bottom: 20px; color: var(--netflix-red); text-decoration: none; font-weight: bold; }
 .dynamic-item { border: 1px solid var(--light-gray); padding: 15px; margin-bottom: 15px; border-radius: 5px; } .delete-btn { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
 </style><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;700&display=swap" rel="stylesheet"></head>
 <body>
-  <a href="{{ url_for('admin') }}" class="back-to-admin">← Back to Admin</a>
+  <a href="{{ url_for('admin') }}">← Back to Admin</a>
   <h2>Edit: {{ movie.title }}</h2>
   <form method="post">
     <div class="form-group"><label>Title:</label><input type="text" name="title" value="{{ movie.title }}" required /></div>
@@ -630,76 +509,30 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
     <div class="form-group"><label>Backdrop URL (Landscape):</label><input type="url" name="backdrop" value="{{ movie.backdrop or '' }}" /></div>
     <div class="form-group"><label>Overview:</label><textarea name="overview">{{ movie.overview or '' }}</textarea></div>
     <div class="form-group"><label>Genres (comma separated):</label><input type="text" name="genres" value="{{ movie.genres|join(', ') if movie.genres else '' }}" /></div>
-    <div class="form-group"><label>Languages (comma separated):</label><input type="text" name="languages" value="{{ movie.languages|join(', ') if movie.languages else '' }}" placeholder="e.g. Hindi, English, Bangla" /></div>
-    <div class="form-group"><label>Poster Badge:</label><input type="text" name="poster_badge" value="{{ movie.poster_badge or '' }}" /></div>
-    <div class="form-group"><label>Content Type:</label><select name="content_type" id="content_type" onchange="toggleFields()"><option value="movie" {% if movie.type == 'movie' %}selected{% endif %}>Movie</option><option value="series" {% if movie.type == 'series' %}selected{% endif %}>TV/Web Series</option></select></div>
-    
+    <div class="form-group"><label>Content Type:</label><select name="content_type" id="content_type"><option value="movie" {% if movie.type == 'movie' %}selected{% endif %}>Movie</option><option value="series" {% if movie.type == 'series' %}selected{% endif %}>Series</option></select></div>
     <div id="movie_fields">
-        <div class="form-group"><label>Watch Link:</label><input type="url" name="watch_link" value="{{ movie.watch_link or '' }}" /></div><hr><p><b>OR</b> Download Links (Manual)</p>
-        <div class="form-group"><label>480p Link:</label><input type="url" name="link_480p" value="{% for l in movie.links %}{% if l.quality == '480p' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
-        <div class="form-group"><label>720p Link:</label><input type="url" name="link_720p" value="{% for l in movie.links %}{% if l.quality == '720p' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
-        <div class="form-group"><label>1080p Link:</label><input type="url" name="link_1080p" value="{% for l in movie.links %}{% if l.quality == '1080p' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
-        <hr><p><b>OR</b> Get from Telegram</p>
+        <div class="form-group"><label>Watch Link:</label><input type="url" name="watch_link" value="{{ movie.watch_link or '' }}" /></div>
         <div id="telegram_files_container">
-            {% if movie.type == 'movie' and movie.files %}{% for file in movie.files %}
-            <div class="dynamic-item">
-                <div class="form-group"><label>Quality:</label><input type="text" name="telegram_quality[]" value="{{ file.quality }}" required /></div>
-                <div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" value="{{ file.message_id }}" required /></div>
-                <button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>
-            </div>
-            {% endfor %}{% endif %}
+            {% if movie.type == 'movie' and movie.files %}{% for file in movie.files %}<div class="dynamic-item"><div class="form-group"><label>Quality:</label><input type="text" name="telegram_quality[]" value="{{ file.quality }}" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" value="{{ file.message_id }}" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button></div>{% endfor %}{% endif %}
         </div><button type="button" onclick="addTelegramFileField()" class="add-btn">Add Telegram File</button>
     </div>
-
     <div id="episode_fields" style="display: none;">
-      <h3>Season Packs</h3>
-      <div id="season_packs_container">
-        {% if movie.type == 'series' and movie.season_packs %}
-          {% for pack in movie.season_packs | sort(attribute='season') %}
-          <div class="dynamic-item">
-            <div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" value="{{ pack.season }}" required /></div>
-            <div class="form-group"><label>Telegram Message ID:</label><input type="number" name="pack_message_id[]" value="{{ pack.message_id }}" required /></div>
-            <button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Pack</button>
-          </div>
-          {% endfor %}
-        {% endif %}
-      </div>
-      <button type="button" onclick="addSeasonPackField()" class="add-btn">Add Season Pack</button>
-      <hr style="margin: 20px 0;">
-
-      <h3>Individual Episodes</h3>
-      <div id="episodes_container">
-      {% if movie.type == 'series' and movie.episodes %}{% for ep in movie.episodes | sort(attribute='episode_number') | sort(attribute='season') %}<div class="dynamic-item">
-        <div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="{{ ep.season or 1 }}" required /></div>
-        <div class="form-group"><label>Ep Number:</label><input type="number" name="episode_number[]" value="{{ ep.episode_number }}" required /></div>
-        <div class="form-group"><label>Ep Title:</label><input type="text" name="episode_title[]" value="{{ ep.title or '' }}" /></div>
-        <hr><p><b>Provide ONE of the following:</b></p>
-        <div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" value="{{ ep.message_id or '' }}" /></div>
-        <p><b>OR</b> Watch Link:</p>
-        <div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" value="{{ ep.watch_link or '' }}" /></div>
-        <button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>
-      </div>{% endfor %}{% endif %}</div><button type="button" onclick="addEpisodeField()" class="add-btn">Add Episode</button>
+      <h3>Season Packs</h3><div id="season_packs_container">
+        {% if movie.type == 'series' and movie.season_packs %}{% for pack in movie.season_packs %}<div class="dynamic-item"><div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" value="{{ pack.season }}" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="pack_message_id[]" value="{{ pack.message_id }}" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button></div>{% endfor %}{% endif %}
+      </div><button type="button" onclick="addSeasonPackField()" class="add-btn">Add Season Pack</button><hr>
+      <h3>Episodes</h3><div id="episodes_container">
+      {% if movie.type == 'series' and movie.episodes %}{% for ep in movie.episodes %}<div class="dynamic-item"><div class="form-group"><label>Season:</label><input type="number" name="episode_season[]" value="{{ ep.season }}" required /></div><div class="form-group"><label>Episode:</label><input type="number" name="episode_number[]" value="{{ ep.episode_number }}" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="episode_message_id[]" value="{{ ep.message_id }}" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button></div>{% endfor %}{% endif %}
+      </div><button type="button" onclick="addEpisodeField()" class="add-btn">Add Episode</button>
     </div>
-    
-    <hr style="margin: 20px 0;">
-    <div class="form-group"><input type="checkbox" name="is_trending" value="true" {% if movie.is_trending %}checked{% endif %}><label style="display: inline-block;">Is Trending?</label></div>
-    <div class="form-group"><input type="checkbox" name="is_coming_soon" value="true" {% if movie.is_coming_soon %}checked{% endif %}><label style="display: inline-block;">Is Coming Soon?</label></div>
-    <button type="submit">Update Content</button>
+    <div class="form-group"><input type="checkbox" name="is_trending" {% if movie.is_trending %}checked{% endif %}><label>Is Trending?</label></div>
+    <button type="submit">Update</button>
   </form>
-  
-  <script>
-    function toggleFields() { var isSeries = document.getElementById('content_type').value === 'series'; document.getElementById('episode_fields').style.display = isSeries ? 'block' : 'none'; document.getElementById('movie_fields').style.display = isSeries ? 'none' : 'block'; }
-    function addTelegramFileField() { const c = document.getElementById('telegram_files_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Quality (e.g., 720p):</label><input type="text" name="telegram_quality[]" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>`; c.appendChild(d); }
-    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><hr><p><b>Provide ONE of the following:</b></p><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><p><b>OR</b> Watch Link:</p><div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
-    function addSeasonPackField() { const c = document.getElementById('season_packs_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" required /></div><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="pack_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Pack</button>`; c.appendChild(d); }
-    document.addEventListener('DOMContentLoaded', toggleFields);
-  </script>
 </body></html>
 """
 
 contact_html = """
 <!DOCTYPE html>
-<html lang="bn"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Contact Us / Report - {{ site_name }}</title><style>
+<html lang="bn"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Contact Us - {{ site_name }}</title><style>
 :root { --netflix-red: #E50914; --netflix-black: #141414; --dark-gray: #222; --light-gray: #333; --text-light: #f5f5f5; }
 body { font-family: 'Roboto', sans-serif; background: var(--netflix-black); color: var(--text-light); padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
 .contact-container { max-width: 600px; width: 100%; background: var(--dark-gray); padding: 30px; border-radius: 8px; }
@@ -712,7 +545,7 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 </style><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;700&display=swap" rel="stylesheet"></head>
 <body><div class="contact-container"><h2>Contact Us</h2>
 {% if message_sent %}<div class="success-message"><p>আপনার বার্তা সফলভাবে পাঠানো হয়েছে। ধন্যবাদ!</p></div><a href="{{ url_for('home') }}" class="back-link">← Back to Home</a>
-{% else %}<form method="post"><div class="form-group"><label for="type">বিষয় (Subject):</label><select name="type" id="type"><option value="Movie Request" {% if prefill_type == 'Problem Report' %}disabled{% endif %}>Movie/Series Request</option><option value="Problem Report" {% if prefill_type == 'Problem Report' %}selected{% endif %}>Report a Problem</option><option value="General Feedback">General Feedback</option></select></div><div class="form-group"><label for="content_title">মুভি/সিরিজের নাম (Title):</label><input type="text" name="content_title" id="content_title" value="{{ prefill_title }}" required></div><div class="form-group"><label for="message">আপনার বার্তা (Message):</label><textarea name="message" id="message" required></textarea></div><div class="form-group"><label for="email">আপনার ইমেইল (Optional):</label><input type="email" name="email" id="email"></div><input type="hidden" name="reported_content_id" value="{{ prefill_id }}"><button type="submit">Submit</button></form><a href="{{ url_for('home') }}" class="back-link">← Cancel</a>{% endif %}
+{% else %}<form method="post"><div class="form-group"><label for="type">বিষয় (Subject):</label><select name="type" id="type"><option value="Movie Request">Movie/Series Request</option><option value="Problem Report">Report a Problem</option><option value="General Feedback">General Feedback</option></select></div><div class="form-group"><label for="content_title">মুভি/সিরিজের নাম (Title):</label><input type="text" name="content_title" required></div><div class="form-group"><label for="message">আপনার বার্তা (Message):</label><textarea name="message" required></textarea></div><div class="form-group"><label for="email">আপনার ইমেইল (Optional):</label><input type="email" name="email"></div><button type="submit">Submit</button></form><a href="{{ url_for('home') }}" class="back-link">← Cancel</a>{% endif %}
 </div></body></html>
 """
 
@@ -720,8 +553,7 @@ unlock_html = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Unlock Download for {{ movie.title }}</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
@@ -740,14 +572,9 @@ unlock_html = """
         <h1>Unlocking Download for:</h1>
         <h2>{{ movie.title }}</h2>
         <p>Your file is ready. Click the button below to receive it directly in your Telegram chat.</p>
-        
-        <div class="ad-container">
-            {% if ad_settings and ad_settings.banner_ad_code %}{{ ad_settings.banner_ad_code|safe }}{% endif %}
-        </div>
-        
+        <div class="ad-container">{% if ad_settings and ad_settings.banner_ad_code %}{{ ad_settings.banner_ad_code|safe }}{% endif %}</div>
         <a href="{{ bot_redirect_url }}" class="unlock-button">✅ Get File in Telegram</a>
     </div>
-
     {% if ad_settings and ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
 </body>
 </html>
@@ -829,9 +656,6 @@ def get_tmdb_details_from_api(title, content_type, year=None):
 def process_movie_list(movie_list):
     return [{**item, '_id': str(item['_id'])} for item in movie_list]
 
-# ======================================================================
-# --- Telegram Bot Helper Functions ---
-# ======================================================================
 def send_telegram_message(chat_id, text, reply_markup=None):
     payload = {'chat_id': chat_id, 'text': text, 'parse_mode': 'MarkdownV2'}
     if reply_markup:
@@ -843,7 +667,6 @@ def send_file_to_user(chat_id, payload_str):
         parts = payload_str.split('_')
         content_type_prefix = parts[0]
         doc_id_str = parts[1]
-        
         content = movies.find_one({"_id": ObjectId(doc_id_str)})
         if not content: return
 
@@ -934,7 +757,7 @@ def unlock_link():
         bot_redirect_url = f"https://t.me/{BOT_USERNAME}?start={payload}"
         return render_template_string(unlock_html, movie=movie, bot_redirect_url=bot_redirect_url)
     except Exception: return "Invalid link.", 400
-
+    
 # ======================================================================
 # --- Admin and Contact Routes ---
 # ======================================================================
@@ -1030,7 +853,19 @@ def delete_feedback(feedback_id):
 def telegram_webhook():
     data = request.get_json()
 
-    if 'message' in data:
+    if 'inline_query' in data:
+        inline_query = data['inline_query']
+        query_id = inline_query['id']
+        query_text = inline_query.get('query', '').strip()
+        results = []
+        if len(query_text) > 2:
+            search_pipeline = [{"$search": {"index": ATLAS_SEARCH_INDEX_NAME, "autocomplete": {"query": query_text, "path": "title", "fuzzy": {"maxEdits": 1, "prefixLength": 2}}}}, {"$limit": 10}, {"$project": {"_id": 1, "title": 1, "poster": 1, "overview": 1, "release_date": 1}}]
+            search_results = list(movies.aggregate(search_pipeline))
+            for movie in search_results:
+                results.append({"type": "article", "id": str(movie['_id']), "title": movie.get('title', 'No Title'), "thumb_url": movie.get('poster', 'https://via.placeholder.com/150'), "description": f"({movie.get('release_date', 'N/A').split('-')[0]}) {movie.get('overview', '')[:50]}...", "input_message_content": {"message_text": f"/fetch_{str(movie['_id'])}"}})
+        requests.post(f"{TELEGRAM_API_URL}/answerInlineQuery", json={"inline_query_id": query_id, "results": results})
+
+    elif 'message' in data:
         message = data['message']
         chat_id = message['chat']['id']
         text = message.get('text', '').strip()
@@ -1038,43 +873,28 @@ def telegram_webhook():
             parts = text.split()
             if len(parts) > 1: send_file_to_user(chat_id, parts[1])
             else:
-                welcome_message = f"👋 Welcome to *{escape_markdown(SITE_NAME)}* Bot\\!\n\nHow can I help you today?"
-                keyboard = {"inline_keyboard": [[{"text": "🔍 Search for Content", "switch_inline_query_current_chat": ""}], [{"text": f"🌐 Visit {SITE_NAME} Website", "url": url_for('home', _external=True)}]]}
+                welcome_message = f"👋 Welcome to *{escape_markdown(SITE_NAME)}* Bot\\!\n\nYou can search for any content by typing my name in any chat, like this: `@{BOT_USERNAME} Inception`"
+                keyboard = {"inline_keyboard": [[{"text": "🔍 Try Inline Search", "switch_inline_query_current_chat": ""}], [{"text": f"🌐 Visit {SITE_NAME} Website", "url": url_for('home', _external=True)}]]}
                 send_telegram_message(chat_id, welcome_message, keyboard)
-        else:
-            results = list(movies.find({"title": {"$regex": text, "$options": "i"}}).limit(5))
-            if not results: send_telegram_message(chat_id, escape_markdown(f"Sorry, no results found for '{text}'."))
-            else:
-                for movie in results:
-                    movie_id = str(movie['_id'])
-                    caption = f"🎬 *{escape_markdown(movie['title'])}* ({escape_markdown(movie.get('release_date', 'N/A').split('-')[0])})\n\n⭐ IMDb: {movie.get('vote_average', 'N/A')}"
-                    buttons = []
-                    if movie.get('type') == 'movie' and movie.get('files'): buttons.append([{"text": f"📥 Get {f['quality']}", "callback_data": f"get_file_{movie_id}_{f['quality']}"} for f in movie.get('files')])
-                    elif movie.get('type') == 'series':
-                        if movie.get('season_packs'): buttons.append([{"text": f"📦 S{p['season']} Pack", "callback_data": f"get_pack_{movie_id}_S{p['season']}"} for p in movie.get('season_packs')])
-                        buttons.append([{"text": "📂 View Episodes", "callback_data": f"episodes_{movie_id}_s1"}])
-                    keyboard = {"inline_keyboard": buttons}
-                    poster_url = movie.get('poster')
-                    payload = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': str(keyboard).replace("'", '"')}
-                    if poster_url:
-                        payload['photo'] = poster_url
-                        requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
-                    else:
-                        payload['text'] = caption
-                        requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
-
-    elif 'callback_query' in data:
-        callback_query = data['callback_query']
-        query_data = callback_query['data']
-        chat_id = callback_query['message']['chat']['id']
-        requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", json={'callback_query_id': callback_query['id']})
-        if query_data.startswith("get_"):
-            unlock_url = url_for('unlock_link', p=query_data, _external=True)
-            message_text = "👇 To get your file, please unlock the link on our website\\."
-            keyboard = {"inline_keyboard": [[{"text": "⚡ Unlock Download Link", "url": unlock_url}]]}
-            send_telegram_message(chat_id, message_text, keyboard)
-        elif query_data.startswith("episodes_"):
-            send_telegram_message(chat_id, escape_markdown("Please visit our website to browse episodes."))
+        elif text.startswith('/fetch_'):
+            movie_id = text.split('_')[1]
+            content = movies.find_one({"_id": ObjectId(movie_id)})
+            if content:
+                caption = f"🎬 *{escape_markdown(content['title'])}*\n\nSelect a link to download:"
+                buttons = []
+                if content.get('type') == 'movie' and content.get('files'): buttons.append([{"text": f"📥 {f['quality']}", "url": url_for('unlock_link', p=f"file_{movie_id}_{f['quality']}", _external=True)} for f in content.get('files')])
+                elif content.get('type') == 'series':
+                    if content.get('season_packs'): buttons.append([{"text": f"📦 S{p['season']} Pack", "url": url_for('unlock_link', p=f"pack_{movie_id}_S{p['season']}", _external=True)} for p in content.get('season_packs')])
+                    buttons.append([{"text": "📂 View Episodes on Website", "url": url_for('movie_detail', movie_id=movie_id, _external=True)}])
+                keyboard = {"inline_keyboard": buttons}
+                poster_url = content.get('poster')
+                payload = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': str(keyboard).replace("'", '"')}
+                if poster_url:
+                    payload['photo'] = poster_url
+                    requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
+                else:
+                    payload['text'] = caption
+                    requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
 
     elif 'channel_post' in data:
         post = data['channel_post']
