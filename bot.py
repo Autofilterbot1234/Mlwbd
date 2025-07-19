@@ -135,7 +135,7 @@ index_html = """
   .tag-link { padding: 6px 16px; background-color: rgba(255, 255, 255, 0.1); border: 1px solid #444; border-radius: 50px; font-weight: 500; font-size: 0.85rem; transition: all 0.3s; }
   .tag-link:hover { background-color: var(--netflix-red); border-color: var(--netflix-red); color: white; }
   .hero-section { height: 85vh; position: relative; color: white; overflow: hidden; }
-  .hero-slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center top; display: flex; align-items: flex-end; padding: 50px; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: 1; }
+  .hero-slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center center; display: flex; align-items: flex-end; padding: 50px; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: 1; }
   .hero-slide.active { opacity: 1; z-index: 2; }
   .hero-slide::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--netflix-black) 10%, transparent 50%), linear-gradient(to right, rgba(0,0,0,0.8) 0%, transparent 60%); }
   .hero-content { position: relative; z-index: 3; max-width: 50%; }
@@ -265,7 +265,7 @@ index_html = """
   {% else %}
     {% if all_badges %}<div class="tags-section"><div class="tags-container">{% for badge in all_badges %}<a href="{{ url_for('movies_by_badge', badge_name=badge) }}" class="tag-link">{{ badge }}</a>{% endfor %}</div></div>{% endif %}
     
-    {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_link and not movie.is_coming_soon %}<a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
+    {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.backdrop or movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_link and not movie.is_coming_soon %}<a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
 
     {% macro render_grid_section(title, movies_list, endpoint, skeleton_count=6) %}
         <div class="category-section">
@@ -444,7 +444,7 @@ detail_html = """
 <header class="detail-header"><a href="{{ url_for('home') }}" class="back-button"><i class="fas fa-arrow-left"></i> Back to Home</a></header>
 {% if movie %}
 <div class="detail-hero" style="min-height: auto; padding-bottom: 60px;">
-  <div class="detail-hero-background" style="background-image: url('{{ movie.poster }}');"></div>
+  <div class="detail-hero-background" style="background-image: url('{{ movie.backdrop or movie.poster }}');"></div>
   <div class="detail-content-wrapper"><img class="detail-poster" src="{{ movie.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ movie.title }}">
     <div class="detail-info">
       <h1 class="detail-title">{{ movie.title }}</h1>
@@ -657,7 +657,9 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
   <h2>Edit: {{ movie.title }}</h2>
   <form method="post">
     <div class="form-group"><label>Title:</label><input type="text" name="title" value="{{ movie.title }}" required /></div>
-    <div class="form-group"><label>Poster URL:</label><input type="url" name="poster" value="{{ movie.poster or '' }}" /></div><div class="form-group"><label>Overview:</label><textarea name="overview">{{ movie.overview or '' }}</textarea></div>
+    <div class="form-group"><label>Poster URL (Portrait):</label><input type="url" name="poster" value="{{ movie.poster or '' }}" /></div>
+    <div class="form-group"><label>Backdrop URL (Landscape):</label><input type="url" name="backdrop" value="{{ movie.backdrop or '' }}" /></div>
+    <div class="form-group"><label>Overview:</label><textarea name="overview">{{ movie.overview or '' }}</textarea></div>
     <div class="form-group"><label>Genres (comma separated):</label><input type="text" name="genres" value="{{ movie.genres|join(', ') if movie.genres else '' }}" /></div>
     <div class="form-group"><label>Languages (comma separated):</label><input type="text" name="languages" value="{{ movie.languages|join(', ') if movie.languages else '' }}" placeholder="e.g. Hindi, English, Bangla" /></div>
     <div class="form-group"><label>Poster Badge:</label><input type="text" name="poster_badge" value="{{ movie.poster_badge or '' }}" /></div>
@@ -852,8 +854,10 @@ def get_tmdb_details_from_api(title, content_type, year=None):
             trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
             
             details = {
-                "tmdb_id": tmdb_id, "title": res_json.get("title") or res_json.get("name"), 
+                "tmdb_id": tmdb_id,
+                "title": res_json.get("title") or res_json.get("name"), 
                 "poster": f"https://image.tmdb.org/t/p/w500{res_json.get('poster_path')}" if res_json.get('poster_path') else None, 
+                "backdrop": f"https://image.tmdb.org/t/p/w1280{res_json.get('backdrop_path')}" if res_json.get('backdrop_path') else None,
                 "overview": res_json.get("overview"), "release_date": res_json.get("release_date") or res_json.get("first_air_date"), 
                 "genres": [g['name'] for g in res_json.get("genres", [])], "vote_average": res_json.get("vote_average"), "trailer_key": trailer_key
             }
@@ -952,53 +956,26 @@ def recently_added_all(): return render_full_list(list(movies.find({"is_coming_s
 @requires_auth
 def admin():
     if request.method == "POST":
-        # Note: This is for manual adding, webhook is the primary method for adding content
         content_type = request.form.get("content_type", "movie")
         title = request.form.get("title")
         tmdb_data = get_tmdb_details_from_api(title, content_type) or {}
         
-        # Initialize basic structure
         movie_data = {
             "title": title, "type": content_type,
             "is_trending": False, "is_coming_soon": False, 
             "links": [], "files": [], "episodes": [], "season_packs": [], "languages": [],
             "created_at": datetime.utcnow()
         }
-        # Merge TMDB data if found
         movie_data.update(tmdb_data)
 
         if content_type == "movie":
-            watch_link = request.form.get("watch_link")
-            if watch_link: movie_data["watch_link"] = watch_link
-            
-            # Manual download links
-            links = []
-            if request.form.get("link_480p"): links.append({"quality": "480p", "url": request.form.get("link_480p")})
-            if request.form.get("link_720p"): links.append({"quality": "720p", "url": request.form.get("link_720p")})
-            if request.form.get("link_1080p"): links.append({"quality": "1080p", "url": request.form.get("link_1080p")})
+            if request.form.get("watch_link"): movie_data["watch_link"] = request.form.get("watch_link")
+            links = [{"quality": q, "url": u} for q, u in [("480p", request.form.get("link_480p")), ("720p", request.form.get("link_720p")), ("1080p", request.form.get("link_1080p"))] if u]
             if links: movie_data["links"] = links
-
-            # Telegram files
-            files = []
-            qualities = request.form.getlist('telegram_quality[]')
-            message_ids = request.form.getlist('telegram_message_id[]')
-            for q, mid in zip(qualities, message_ids):
-                if q and mid: files.append({"quality": q, "message_id": int(mid)})
+            files = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             if files: movie_data["files"] = files
         else: # Series
-            episodes = []
-            seasons = request.form.getlist('episode_season[]')
-            ep_nums = request.form.getlist('episode_number[]')
-            ep_titles = request.form.getlist('episode_title[]')
-            ep_msg_ids = request.form.getlist('episode_message_id[]')
-            ep_watch_links = request.form.getlist('episode_watch_link[]')
-            for s, e, t, m, w in zip(seasons, ep_nums, ep_titles, ep_msg_ids, ep_watch_links):
-                if s and e:
-                    episodes.append({
-                        "season": int(s), "episode_number": int(e), "title": t,
-                        "message_id": int(m) if m else None,
-                        "watch_link": w if w else None
-                    })
+            episodes = [{"season": int(s), "episode_number": int(e), "title": t, "message_id": int(m) if m else None, "watch_link": w or None} for s, e, t, m, w in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_message_id[]'), request.form.getlist('episode_watch_link[]')) if s and e]
             if episodes: movie_data["episodes"] = episodes
 
         movies.insert_one(movie_data)
@@ -1039,7 +1016,9 @@ def edit_movie(movie_id):
             "title": request.form.get("title"), "type": content_type,
             "is_trending": request.form.get("is_trending") == "true",
             "is_coming_soon": request.form.get("is_coming_soon") == "true",
-            "poster": request.form.get("poster", "").strip(), "overview": request.form.get("overview", "").strip(),
+            "poster": request.form.get("poster", "").strip(),
+            "backdrop": request.form.get("backdrop", "").strip(),
+            "overview": request.form.get("overview", "").strip(),
             "genres": [g.strip() for g in request.form.get("genres", "").split(',') if g.strip()],
             "languages": [lang.strip() for lang in request.form.get("languages", "").split(',') if lang.strip()],
             "poster_badge": request.form.get("poster_badge", "").strip() or None
@@ -1128,7 +1107,7 @@ def telegram_webhook():
             return jsonify(status='ok', reason='no_tmdb_data_or_id')
         
         tmdb_id = tmdb_data.get("tmdb_id")
-        update_doc = {"$set": {k: v for k, v in tmdb_data.items() if v}, "$addToSet": {}}
+        update_doc = {"$set": {k: v for k, v in tmdb_data.items() if v is not None}, "$addToSet": {}}
         if parsed_info.get('languages'):
             update_doc["$addToSet"]["languages"] = {"$each": parsed_info['languages']}
         
@@ -1231,15 +1210,16 @@ def telegram_webhook():
             else: 
                 welcome_message = (f"👋 Welcome to {BOT_USERNAME}!\n\nBrowse all our content on our website.")
                 try:
-                    root_url = url_for('home', _external=True)
+                    # Use a fixed root URL as a fallback if request context is not available
+                    root_url = os.environ.get('RENDER_EXTERNAL_URL') or request.url_root
                     keyboard = {"inline_keyboard": [[{"text": "🎬 Visit Website", "url": root_url}]]}
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message, 'reply_markup': str(keyboard).replace("'", '"')})
-                except Exception:
-                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message})
+                except Exception as e:
+                    print(f"Error sending welcome message with button: {e}")
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message})
     return jsonify(status='ok')
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    # For production, use a production-ready WSGI server like Gunicorn or Waitress instead of app.run(debug=False)
     app.run(host='0.0.0.0', port=port, debug=False)
