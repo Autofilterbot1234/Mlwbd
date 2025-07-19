@@ -25,6 +25,12 @@ MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK")
 UPDATE_CHANNEL_LINK = os.environ.get("UPDATE_CHANNEL_LINK")
 DEVELOPER_USER_LINK = os.environ.get("DEVELOPER_USER_LINK")
 
+# ======================================================================
+# --- গ্লোবাল কনফিগারেশন ---
+# ======================================================================
+# ওয়েবসাইটের নাম পরিবর্তনের জন্য শুধু এই লাইনটি এডিট করুন
+SITE_NAME = "Mlwbd"
+
 # --- প্রয়োজনীয় ভেরিয়েবলগুলো সেট করা হয়েছে কিনা তা পরীক্ষা করা ---
 required_vars = {
     "MONGO_URI": MONGO_URI, "BOT_TOKEN": BOT_TOKEN, "TMDB_API_KEY": TMDB_API_KEY,
@@ -74,9 +80,14 @@ except Exception as e:
     sys.exit(1)
 
 @app.context_processor
-def inject_ads():
+def inject_global_vars():
     ad_codes = settings.find_one()
-    return dict(ad_settings=(ad_codes or {}), bot_username=BOT_USERNAME, main_channel_link=MAIN_CHANNEL_LINK)
+    return dict(
+        ad_settings=(ad_codes or {}), 
+        bot_username=BOT_USERNAME, 
+        main_channel_link=MAIN_CHANNEL_LINK,
+        site_name=SITE_NAME  # সাইটের নাম সব টেমপ্লেটে পাঠানো হচ্ছে
+    )
 
 def delete_message_after_delay(chat_id, message_id):
     print(f"Attempting to delete message {message_id} from chat {chat_id}")
@@ -106,7 +117,7 @@ index_html = """
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Mlwbd - Your Entertainment Hub</title>
+<title>{{ site_name }} - Your Entertainment Hub</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
   :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --text-dark: #a0a0a0; --nav-height: 60px; --dark-gray: #222; }
@@ -214,7 +225,7 @@ index_html = """
 </div>
 
 <header class="main-nav">
-  <a href="{{ url_for('home') }}" class="logo">MovieZone</a>
+  <a href="{{ url_for('home') }}" class="logo">{{ site_name }}</a>
   <div class="nav-actions">
     <form method="GET" action="/" class="search-form">
       <input type="search" name="q" class="search-input" placeholder="Search..." value="{{ query|default('') }}" />
@@ -357,7 +368,7 @@ detail_html = """
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>{{ movie.title if movie else "Content Not Found" }} - Mlwbd</title>
+<title>{{ movie.title if movie else "Content Not Found" }} - {{ site_name }}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
   :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --text-dark: #a0a0a0; }
@@ -530,7 +541,7 @@ function copyToClipboard(text) {
 
 genres_html = """
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" /><title>{{ title }} - Mlwbd</title>
+<html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" /><title>{{ title }} - {{ site_name }}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
   :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; }
@@ -562,7 +573,7 @@ watch_html = """
 
 admin_html = """
 <!DOCTYPE html>
-<html><head><title>Admin Panel - Mlwbd</title><meta name="viewport" content="width=device-width, initial-scale=1" /><style>
+<html><head><title>Admin Panel - {{ site_name }}</title><meta name="viewport" content="width=device-width, initial-scale=1" /><style>
 :root { --netflix-red: #E50914; --netflix-black: #141414; --dark-gray: #222; --light-gray: #333; --text-light: #f5f5f5; }
 body { font-family: 'Roboto', sans-serif; background: var(--netflix-black); color: var(--text-light); padding: 20px; }
 h2, h3 { font-family: 'Bebas Neue', sans-serif; color: var(--netflix-red); } h2 { font-size: 2.5rem; margin-bottom: 20px; } h3 { font-size: 1.5rem; margin: 20px 0 10px 0;}
@@ -640,7 +651,7 @@ hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray)
 
 edit_html = """
 <!DOCTYPE html>
-<html><head><title>Edit Content - Mlwbd</title><meta name="viewport" content="width=device-width, initial-scale=1" /><style>
+<html><head><title>Edit Content - {{ site_name }}</title><meta name="viewport" content="width=device-width, initial-scale=1" /><style>
 :root { --netflix-red: #E50914; --netflix-black: #141414; --dark-gray: #222; --light-gray: #333; --text-light: #f5f5f5; }
 body { font-family: 'Roboto', sans-serif; background: var(--netflix-black); color: var(--text-light); padding: 20px; }
 h2, h3 { font-family: 'Bebas Neue', sans-serif; color: var(--netflix-red); } h2 { font-size: 2.5rem; margin-bottom: 20px; } h3 { font-size: 1.5rem; margin: 20px 0 10px 0;}
@@ -730,7 +741,7 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
 
 contact_html = """
 <!DOCTYPE html>
-<html lang="bn"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Contact Us / Report - Mlwbd</title><style>
+<html lang="bn"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Contact Us / Report - {{ site_name }}</title><style>
 :root { --netflix-red: #E50914; --netflix-black: #141414; --dark-gray: #222; --light-gray: #333; --text-light: #f5f5f5; }
 body { font-family: 'Roboto', sans-serif; background: var(--netflix-black); color: var(--text-light); padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
 .contact-container { max-width: 600px; width: 100%; background: var(--dark-gray); padding: 30px; border-radius: 8px; }
@@ -752,6 +763,7 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 # ======================================================================
 
 def parse_filename(filename):
+    # এই ফাংশনটি অপরিবর্তিত থাকবে
     LANGUAGE_MAP = {
         'hindi': 'Hindi', 'hin': 'Hindi', 'english': 'English', 'eng': 'English',
         'bengali': 'Bengali', 'bangla': 'Bangla', 'ben': 'Bengali',
@@ -882,6 +894,7 @@ def process_movie_list(movie_list):
 # ======================================================================
 # --- Main Flask Routes ---
 # ======================================================================
+# এই অংশের কোড অপরিবর্তিত থাকবে
 
 @app.route('/')
 def home():
@@ -1190,8 +1203,8 @@ def telegram_webhook():
                         caption_text = (
                             f"🎬 *{escape_markdown(content['title'])}* {escape_markdown(file_info_text)}\n\n"
                             f"✅ *Successfully Sent To Your PM*\n\n"
-                            f"🔰 Join Our Main Channel\n➡️ [{escape_markdown(BOT_USERNAME)} Main]({MAIN_CHANNEL_LINK})\n\n"
-                            f"📢 Join Our Update Channel\n➡️ [{escape_markdown(BOT_USERNAME)} Official]({UPDATE_CHANNEL_LINK})\n\n"
+                            f"🔰 Join Our Main Channel\n➡️ [{escape_markdown(SITE_NAME)} Main]({MAIN_CHANNEL_LINK})\n\n"
+                            f"📢 Join Our Update Channel\n➡️ [{escape_markdown(SITE_NAME)} Official]({UPDATE_CHANNEL_LINK})\n\n"
                             f"💬 For Any Help or Request\n➡️ [Contact Developer]({DEVELOPER_USER_LINK})"
                         )
                         payload = {'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': message_to_copy_id, 'caption': caption_text, 'parse_mode': 'MarkdownV2'}
@@ -1210,9 +1223,8 @@ def telegram_webhook():
             else: 
                 welcome_message = (f"👋 Welcome to {BOT_USERNAME}!\n\nBrowse all our content on our website.")
                 try:
-                    # Use a fixed root URL as a fallback if request context is not available
                     root_url = os.environ.get('RENDER_EXTERNAL_URL') or request.url_root
-                    keyboard = {"inline_keyboard": [[{"text": "🎬 Visit Website", "url": root_url}]]}
+                    keyboard = {"inline_keyboard": [[{"text": f"🎬 Visit {site_name}", "url": root_url}]]}
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message, 'reply_markup': str(keyboard).replace("'", '"')})
                 except Exception as e:
                     print(f"Error sending welcome message with button: {e}")
