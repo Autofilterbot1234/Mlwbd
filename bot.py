@@ -84,7 +84,6 @@ def inject_ads():
     return dict(ad_settings=(ad_codes or {}), bot_username=BOT_USERNAME, main_channel_link=MAIN_CHANNEL_LINK)
 
 def delete_message_after_delay(chat_id, message_id):
-    print(f"Attempting to delete message {message_id} from chat {chat_id}")
     try:
         requests.post(f"{TELEGRAM_API_URL}/deleteMessage", json={'chat_id': chat_id, 'message_id': message_id})
     except Exception as e:
@@ -572,7 +571,7 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
     <div class="form-group"><label>Content Type:</label><select name="content_type" id="content_type" onchange="toggleFields()"><option value="movie" {% if movie.type == 'movie' %}selected{% endif %}>Movie</option><option value="series" {% if movie.type == 'series' %}selected{% endif %}>TV/Web Series</option></select></div>
     
     <div id="movie_fields">
-        <div class="form-group"><label>Watch Link:</label><input type="url" name="watch_link" value="{{ movie.watch_link or '' }}" /></div><hr><p><b>OR</b> Download Links (Manual)</p>
+        <div class="form-group"><label>Watch Link:</label><input type="url" name="watch_link" value="{{ movie.watch_link or '' }}" /></div><hr><p><b>OR</b> Download Link (Manual)</p>
         <div class="form-group"><label>Download Link:</label><input type="url" name="link_download" value="{% for l in movie.links %}{% if l.quality == 'Download' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
         <hr><p><b>OR</b> Get from Telegram</p>
         <div id="telegram_files_container">
@@ -849,7 +848,7 @@ def admin():
             if request.form.get('link_1080p'): links.append({'quality': '1080p', 'url': request.form.get('link_1080p')})
             movie_data['links'] = links
             movie_data['files'] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
-        else: # Series
+        else:
              movie_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_link": w or None, "message_id": int(m) if m else None} for s, e, t, w, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_link[]'), request.form.getlist('episode_message_id[]'))]
         movies.insert_one(movie_data)
         return redirect(url_for('admin'))
