@@ -20,6 +20,10 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
+# --- একাধিক অ্যাডমিন আইডি (কমা দিয়ে আলাদা করা) ---
+ADMIN_USER_IDS_STR = os.environ.get("ADMIN_USER_IDS") 
+ADMIN_USER_IDS = [uid.strip() for uid in ADMIN_USER_IDS_STR.split(',')] if ADMIN_USER_IDS_STR else []
+
 # আপনার চ্যানেল এবং ডেভেলপারের তথ্য
 MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK")
 UPDATE_CHANNEL_LINK = os.environ.get("UPDATE_CHANNEL_LINK")
@@ -30,6 +34,7 @@ required_vars = {
     "MONGO_URI": MONGO_URI, "BOT_TOKEN": BOT_TOKEN, "TMDB_API_KEY": TMDB_API_KEY,
     "ADMIN_CHANNEL_ID": ADMIN_CHANNEL_ID, "BOT_USERNAME": BOT_USERNAME,
     "ADMIN_USERNAME": ADMIN_USERNAME, "ADMIN_PASSWORD": ADMIN_PASSWORD,
+    "ADMIN_USER_IDS": ADMIN_USER_IDS_STR, # এখন একাধিক আইডি চেক করা হচ্ছে
     "MAIN_CHANNEL_LINK": MAIN_CHANNEL_LINK,
     "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK,
     "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
@@ -97,7 +102,7 @@ def escape_markdown(text: str) -> str:
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # ======================================================================
-# --- HTML টেমপ্লেট ---
+# --- HTML টেমপ্লেট (অপরিবর্তিত) ---
 # ======================================================================
 
 index_html = """
@@ -281,7 +286,6 @@ index_html = """
 </html>
 """
 
-# START OF MODIFIED SECTION
 detail_html = """
 <!DOCTYPE html>
 <html lang="en">
@@ -434,7 +438,6 @@ function copyToClipboard(text) { navigator.clipboard.writeText(text).then(() => 
 </body>
 </html>
 """
-# END OF MODIFIED SECTION
 
 genres_html = """
 <!DOCTYPE html>
@@ -799,7 +802,7 @@ def process_movie_list(movie_list):
     return [{**item, '_id': str(item['_id'])} for item in movie_list]
 
 # ======================================================================
-# --- Main Flask Routes ---
+# --- Main Flask Routes (অপরিবর্তিত) ---
 # ======================================================================
 
 @app.route('/')
@@ -821,36 +824,20 @@ def home():
     }
     return render_template_string(index_html, **context)
 
-# START OF MODIFIED SECTION
 @app.route('/movie/<movie_id>')
 def movie_detail(movie_id):
     try:
-        # First, create the ObjectId
         obj_id = ObjectId(movie_id)
-
-        # Increment the view_count field by 1 for the document.
-        # If the field doesn't exist, it will be created and set to 1.
-        movies.update_one(
-            {"_id": obj_id},
-            {"$inc": {"view_count": 1}}
-        )
-
-        # Now, find the updated document to pass to the template
+        movies.update_one({"_id": obj_id}, {"$inc": {"view_count": 1}})
         movie = movies.find_one({"_id": obj_id})
-        
-        if not movie:
-            return "Content not found", 404
-            
+        if not movie: return "Content not found", 404
         related_movies = []
         if movie.get("genres"):
-            # Use the already created obj_id
             related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": obj_id}}).limit(12))
-            
         return render_template_string(detail_html, movie=movie, trailer_key=movie.get("trailer_key"), related_movies=process_movie_list(related_movies))
     except Exception as e:
         print(f"Error in movie_detail route: {e}")
         return "Content not found or invalid ID", 404
-# END OF MODIFIED SECTION
 
 @app.route('/watch/<movie_id>')
 def watch_movie(movie_id):
@@ -888,7 +875,7 @@ def coming_soon(): return render_full_list(list(movies.find({"is_coming_soon": T
 def recently_added_all(): return render_full_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1)), "Recently Added")
 
 # ======================================================================
-# --- Admin and Webhook Routes ---
+# --- Admin and Webhook Routes (অপরিবর্তিত) ---
 # ======================================================================
 @app.route('/admin', methods=["GET", "POST"])
 @requires_auth
@@ -1005,10 +992,14 @@ def delete_feedback(feedback_id):
     feedback.delete_one({"_id": ObjectId(feedback_id)})
     return redirect(url_for('admin'))
 
-
+# ======================================================================
+# --- Webhook Route (UPDATED FOR MULTIPLE ADMINS) ---
+# ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
+
+    # --- চ্যানেল থেকে অটোমেটিক পোস্ট হ্যান্ডলিং (আগের মতোই) ---
     if 'channel_post' in data:
         post = data['channel_post']
         if str(post.get('chat', {}).get('id')) != ADMIN_CHANNEL_ID: 
@@ -1046,7 +1037,7 @@ def telegram_webhook():
                 print(f"DATABASE: No existing series found. Creating new entry for '{tmdb_data['title']}'...")
                 series_doc = {**tmdb_data, "type": "series", "episodes": [], "season_packs": [], "languages": parsed_info.get('languages', [])}
                 movies.insert_one(series_doc)
-                existing_content = movies.find_one({"tmdb_id": tmdb_id}) # Re-fetch the newly created doc
+                existing_content = movies.find_one({"tmdb_id": tmdb_id}) # Re-fetch
             
             if content_type == 'series_pack':
                 new_pack = {"season": parsed_info['season'], "message_id": post['message_id']}
@@ -1076,10 +1067,50 @@ def telegram_webhook():
                 movies.insert_one(movie_doc)
                 print("SUCCESS: New movie created.")
 
+    # --- ব্যক্তিগত চ্যাট থেকে আসা মেসেজ হ্যান্ডলিং ---
     elif 'message' in data:
         message = data['message']
         chat_id = message['chat']['id']
         text = message.get('text', '')
+        
+        # --- /add কমান্ড হ্যান্ডেল করার যুক্তি (একাধিক অ্যাডমিনের জন্য আপডেট করা) ---
+        # --- অ্যাডমিন আইডি লিস্টে আছে কিনা তা পরীক্ষা করা ---
+        if text.startswith('/add ') and str(chat_id) in ADMIN_USER_IDS:
+            parts = text.split('/add ')[1].split('|')
+            if len(parts) != 3:
+                reply_text = "❌ ভুল ফরম্যাট!\nসঠিক ফরম্যাট:\n`/add Movie Title | Watch Link | Download Link`"
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+                return jsonify(status='ok', reason='admin_command_invalid_format')
+
+            title = parts[0].strip()
+            watch_link = parts[1].strip()
+            download_link = parts[2].strip()
+
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ `{title}` এর তথ্য খোঁজা হচ্ছে..." , 'parse_mode': 'Markdown'})
+
+            tmdb_data = get_tmdb_details_from_api(title, "movie")
+            if not tmdb_data:
+                reply_text = f"❌ দুঃখিত, '{title}' এর জন্য কোনো তথ্য পাওয়া যায়নি। দয়া করে বানান পরীক্ষা করুন।"
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text})
+                return jsonify(status='ok', reason='tmdb_lookup_failed')
+
+            movie_doc = {
+                **tmdb_data,
+                "type": "movie",
+                "watch_link": watch_link,
+                "links": [{"quality": "Download", "url": download_link}], # ডাউনলোড লিঙ্কের জন্য
+                "files": [], "episodes": [], "season_packs": [],
+                "is_trending": False, "is_coming_soon": False,
+                "added_by_admin_bot": True, "created_at": datetime.utcnow()
+            }
+            
+            movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
+            
+            final_reply = f"✅ সফলভাবে `{tmdb_data['title']}` যোগ করা হয়েছে এবং ওয়েবসাইটে লাইভ করা হয়েছে।"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': final_reply, 'parse_mode': 'Markdown'})
+
+            return jsonify(status='ok', reason='admin_command_success')
+        
         if text.startswith('/start'):
             parts = text.split()
             if len(parts) > 1:
@@ -1142,6 +1173,7 @@ def telegram_webhook():
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message, 'reply_markup': str(keyboard).replace("'", '"')})
                 except Exception:
                      requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message})
+
     return jsonify(status='ok')
 
 
