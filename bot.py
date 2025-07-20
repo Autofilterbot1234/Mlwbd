@@ -313,7 +313,7 @@ detail_html = """
   
   .action-buttons-container { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
   .action-btn { background-color: var(--netflix-red); color: white; padding: 15px 30px; font-size: 1.2rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease; flex-grow: 1; justify-content: center; }
-  .action-btn.download { background-color: #3b82f6; } /* Blue for download */
+  .action-btn.download { background-color: #3b82f6; }
   .action-btn:hover { transform: scale(1.02); filter: brightness(1.1); }
 
   .section-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; padding-bottom: 5px; border-bottom: 2px solid var(--netflix-red); display: inline-block; }
@@ -573,9 +573,7 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
     
     <div id="movie_fields">
         <div class="form-group"><label>Watch Link:</label><input type="url" name="watch_link" value="{{ movie.watch_link or '' }}" /></div><hr><p><b>OR</b> Download Links (Manual)</p>
-        <div class="form-group"><label>480p Link:</label><input type="url" name="link_480p" value="{% for l in movie.links %}{% if l.quality == '480p' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
-        <div class="form-group"><label>720p Link:</label><input type="url" name="link_720p" value="{% for l in movie.links %}{% if l.quality == '720p' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
-        <div class="form-group"><label>1080p Link:</label><input type="url" name="link_1080p" value="{% for l in movie.links %}{% if l.quality == '1080p' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
+        <div class="form-group"><label>Download Link:</label><input type="url" name="link_download" value="{% for l in movie.links %}{% if l.quality == 'Download' %}{{ l.url }}{% endif %}{% endfor %}" /></div>
         <hr><p><b>OR</b> Get from Telegram</p>
         <div id="telegram_files_container">
             {% if movie.type == 'movie' and movie.files %}{% for file in movie.files %}
@@ -658,37 +656,18 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 # ======================================================================
 
 def parse_filename(filename):
-    LANGUAGE_MAP = {
-        'hindi': 'Hindi', 'hin': 'Hindi', 'english': 'English', 'eng': 'English',
-        'bengali': 'Bengali', 'bangla': 'Bangla', 'ben': 'Bengali',
-        'tamil': 'Tamil', 'tam': 'Tamil', 'telugu': 'Telugu', 'tel': 'Telugu',
-        'kannada': 'Kannada', 'kan': 'Kannada', 'malayalam': 'Malayalam', 'mal': 'Malayalam',
-        'korean': 'Korean', 'kor': 'Korean', 'chinese': 'Chinese', 'chi': 'Chinese',
-        'japanese': 'Japanese', 'jap': 'Japanese',
-        'dual audio': ['Hindi', 'English'], 'dual': ['Hindi', 'English'],
-        'multi audio': ['Multi Audio']
-    }
-    JUNK_KEYWORDS = [
-        '1080p', '720p', '480p', '2160p', '4k', 'uhd', 'web-dl', 'webdl', 'webrip',
-        'brrip', 'bluray', 'dvdrip', 'hdrip', 'hdcam', 'camrip', 'hdts', 'x264',
-        'x265', 'hevc', 'avc', 'aac', 'ac3', 'dts', '5.1', '7.1', 'final', 'uncut',
-        'extended', 'remastered', 'unrated', 'nf', 'www', 'com', 'net', 'org', 'psa'
-    ]
+    LANGUAGE_MAP = { 'hindi': 'Hindi', 'hin': 'Hindi', 'english': 'English', 'eng': 'English', 'bengali': 'Bengali', 'bangla': 'Bangla', 'ben': 'Bengali', 'tamil': 'Tamil', 'tam': 'Tamil', 'telugu': 'Telugu', 'tel': 'Telugu', 'kannada': 'Kannada', 'kan': 'Kannada', 'malayalam': 'Malayalam', 'mal': 'Malayalam', 'korean': 'Korean', 'kor': 'Korean', 'chinese': 'Chinese', 'chi': 'Chinese', 'japanese': 'Japanese', 'jap': 'Japanese', 'dual audio': ['Hindi', 'English'], 'dual': ['Hindi', 'English'], 'multi audio': ['Multi Audio'] }
+    JUNK_KEYWORDS = [ '1080p', '720p', '480p', '2160p', '4k', 'uhd', 'web-dl', 'webdl', 'webrip', 'brrip', 'bluray', 'dvdrip', 'hdrip', 'hdcam', 'camrip', 'hdts', 'x264', 'x265', 'hevc', 'avc', 'aac', 'ac3', 'dts', '5.1', '7.1', 'final', 'uncut', 'extended', 'remastered', 'unrated', 'nf', 'www', 'com', 'net', 'org', 'psa' ]
     SEASON_PACK_KEYWORDS = ['complete', 'season', 'pack', 'all episodes', 'zip']
-
     base_name, _ = os.path.splitext(filename)
     processed_name = re.sub(r'[\._\[\]\(\)\{\}-]', ' ', base_name)
-    
     found_languages = []
     temp_name_for_lang = processed_name.lower()
     for keyword, lang_name in LANGUAGE_MAP.items():
         if re.search(r'\b' + re.escape(keyword) + r'\b', temp_name_for_lang):
-            if isinstance(lang_name, list):
-                found_languages.extend(lang_name)
-            else:
-                found_languages.append(lang_name)
+            if isinstance(lang_name, list): found_languages.extend(lang_name)
+            else: found_languages.append(lang_name)
     languages = sorted(list(set(found_languages))) if found_languages else []
-
     season_pack_match = re.search(r'^(.*?)[\s\.]*(?:S|Season)[\s\.]?(\d{1,2})', processed_name, re.I)
     if season_pack_match:
         text_after_season = processed_name[season_pack_match.end():].lower()
@@ -696,12 +675,9 @@ def parse_filename(filename):
         if is_pack:
             title = season_pack_match.group(1).strip()
             season_num = int(season_pack_match.group(2))
-            for junk in JUNK_KEYWORDS + SEASON_PACK_KEYWORDS:
-                title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
+            for junk in JUNK_KEYWORDS + SEASON_PACK_KEYWORDS: title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
             final_title = ' '.join(title.split()).title()
-            if final_title:
-                return {'type': 'series_pack', 'title': final_title, 'season': season_num, 'languages': languages}
-
+            if final_title: return {'type': 'series_pack', 'title': final_title, 'season': season_num, 'languages': languages}
     series_patterns = [
         re.compile(r'^(.*?)[\s\.]*(?:S|Season)[\s\.]?(\d{1,2})[\s\.]*(?:E|Ep|Episode)[\s\.]?(\d{1,3})', re.I),
         re.compile(r'^(.*?)[\s\.]*(?:E|Ep|Episode)[\s\.]?(\d{1,3})', re.I)
@@ -712,23 +688,16 @@ def parse_filename(filename):
             title = match.group(1).strip()
             season_num = int(match.group(2)) if i == 0 else 1
             episode_num = int(match.group(3)) if i == 0 else int(match.group(2))
-            for junk in JUNK_KEYWORDS:
-                title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
+            for junk in JUNK_KEYWORDS: title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
             final_title = ' '.join(title.split()).title()
-            if final_title:
-                return {'type': 'series', 'title': final_title, 'season': season_num, 'episode': episode_num, 'languages': languages}
-
+            if final_title: return {'type': 'series', 'title': final_title, 'season': season_num, 'episode': episode_num, 'languages': languages}
     year_match = re.search(r'\b(19[5-9]\d|20\d{2})\b', processed_name)
     year = year_match.group(1) if year_match else None
     title_part = processed_name[:year_match.start()] if year_match else processed_name
-    
     temp_title = title_part
-    for lang_key in LANGUAGE_MAP.keys():
-        temp_title = re.sub(r'\b' + lang_key + r'\b', '', temp_title, flags=re.I)
-    for junk in JUNK_KEYWORDS:
-        temp_title = re.sub(r'\b' + re.escape(junk) + r'\b', '', temp_title, flags=re.I)
+    for lang_key in LANGUAGE_MAP.keys(): temp_title = re.sub(r'\b' + lang_key + r'\b', '', temp_title, flags=re.I)
+    for junk in JUNK_KEYWORDS: temp_title = re.sub(r'\b' + re.escape(junk) + r'\b', '', temp_title, flags=re.I)
     final_title = ' '.join(temp_title.split()).title()
-    
     return {'type': 'movie', 'title': final_title, 'year': year, 'languages': languages} if final_title else None
 
 def get_tmdb_details_from_api(title, content_type, year=None):
@@ -744,7 +713,9 @@ def get_tmdb_details_from_api(title, content_type, year=None):
             search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}"
             if query_year and search_type == "movie":
                 search_url += f"&year={query_year}"
-            
+            elif query_year and search_type == "tv":
+                search_url += f"&first_air_date_year={query_year}"
+
             search_res = requests.get(search_url, timeout=10)
             search_res.raise_for_status()
             results = search_res.json().get("results")
@@ -773,7 +744,7 @@ def get_tmdb_details_from_api(title, content_type, year=None):
 
     tmdb_data = search_tmdb(title, year)
     if not tmdb_data and year:
-        print(f"WARNING: TMDb search found no results for '{title}' with year '{year}'. Retrying without year.")
+        print(f"WARNING: TMDb search failed for '{title}' with year '{year}'. Retrying without year.")
         tmdb_data = search_tmdb(title, None)
         
     if not tmdb_data:
@@ -871,11 +842,15 @@ def admin():
             "links": [], "files": [], "episodes": [], "season_packs": [], "languages": []
         }
         if content_type == "movie":
-            # ... (Movie handling code as before)
-            pass
-        else:
-            # ... (Series handling code as before)
-            pass
+            if request.form.get('watch_link'): movie_data['watch_link'] = request.form.get('watch_link')
+            links = []
+            if request.form.get('link_480p'): links.append({'quality': '480p', 'url': request.form.get('link_480p')})
+            if request.form.get('link_720p'): links.append({'quality': '720p', 'url': request.form.get('link_720p')})
+            if request.form.get('link_1080p'): links.append({'quality': '1080p', 'url': request.form.get('link_1080p')})
+            movie_data['links'] = links
+            movie_data['files'] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
+        else: # Series
+             movie_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_link": w or None, "message_id": int(m) if m else None} for s, e, t, w, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_link[]'), request.form.getlist('episode_message_id[]'))]
         movies.insert_one(movie_data)
         return redirect(url_for('admin'))
 
@@ -922,7 +897,10 @@ def edit_movie(movie_id):
         
         if content_type == "movie":
             update_data["watch_link"] = request.form.get("watch_link", "")
-            update_data["links"] = [{"quality": q, "url": u} for q, u in [("480p", request.form.get("link_480p")), ("720p", request.form.get("link_720p")), ("1080p", request.form.get("link_1080p"))] if u]
+            links = []
+            if request.form.get("link_download"):
+                links.append({"quality": "Download", "url": request.form.get("link_download")})
+            update_data["links"] = links
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
         else:
@@ -976,36 +954,30 @@ def delete_feedback(feedback_id):
 
 
 # ======================================================================
-# --- Webhook Route (FINAL VERSION) ---
+# --- Webhook Route (FINAL VERSION with /addseries command) ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
 
-    # --- চ্যানেল থেকে অটোমেটিক পোস্ট হ্যান্ডলিং ---
     if 'channel_post' in data:
         post = data['channel_post']
         if str(post.get('chat', {}).get('id')) != ADMIN_CHANNEL_ID: 
-            return jsonify(status='ok', reason='not_admin_channel')
+            return jsonify(status='ok')
         
         file = post.get('video') or post.get('document')
         if not (file and file.get('file_name')): 
-            return jsonify(status='ok', reason='no_file_in_post')
+            return jsonify(status='ok')
         
         filename = file.get('file_name')
-        print(f"\n--- [WEBHOOK] PROCESSING NEW FILE: {filename} ---")
         parsed_info = parse_filename(filename)
         
         if not parsed_info or not parsed_info.get('title'):
-            print(f"FAILED: Could not parse title from filename: {filename}")
-            return jsonify(status='ok', reason='parsing_failed')
-        
-        print(f"PARSED INFO: {parsed_info}")
+            return jsonify(status='ok')
 
         tmdb_data = get_tmdb_details_from_api(parsed_info['title'], parsed_info['type'], parsed_info.get('year'))
         if not tmdb_data or not tmdb_data.get("tmdb_id"):
-            print(f"DATABASE: Skipping update for '{parsed_info['title']}' due to no TMDb data.")
-            return jsonify(status='ok', reason='no_tmdb_data_or_id')
+            return jsonify(status='ok')
         
         tmdb_id = tmdb_data.get("tmdb_id")
         update_doc = {"$set": {k: v for k, v in tmdb_data.items() if v}, "$addToSet": {}}
@@ -1017,7 +989,6 @@ def telegram_webhook():
 
         if content_type in ['series', 'series_pack']:
             if not existing_content:
-                print(f"DATABASE: No existing series found. Creating new entry for '{tmdb_data['title']}'...")
                 series_doc = {**tmdb_data, "type": "series", "episodes": [], "season_packs": [], "languages": parsed_info.get('languages', [])}
                 movies.insert_one(series_doc)
                 existing_content = movies.find_one({"tmdb_id": tmdb_id})
@@ -1026,97 +997,96 @@ def telegram_webhook():
                 new_pack = {"season": parsed_info['season'], "message_id": post['message_id']}
                 movies.update_one({"_id": existing_content['_id']}, {"$pull": {"season_packs": {"season": new_pack['season']}}})
                 update_doc["$push"] = {"season_packs": new_pack}
-                print(f"SUCCESS: Season {new_pack['season']} pack updated.")
             else:
                 new_episode = {"season": parsed_info['season'], "episode_number": parsed_info['episode'], "message_id": post['message_id']}
                 movies.update_one({"_id": existing_content['_id']}, {"$pull": {"episodes": {"season": new_episode['season'], "episode_number": new_episode['episode_number']}}})
                 update_doc["$push"] = {"episodes": new_episode}
-                print(f"SUCCESS: S{new_episode['season']}E{new_episode['episode_number']} updated.")
             movies.update_one({"_id": existing_content['_id']}, update_doc)
         else:
-            quality_match = re.search(r'(\d{3,4}p)', filename, re.I)
-            quality = quality_match.group(1) if quality_match else "HD"
+            quality = re.search(r'(\d{3,4}p)', filename, re.I).group(1) if re.search(r'(\d{3,4}p)', filename, re.I) else "HD"
             new_file = {"quality": quality, "message_id": post['message_id']}
-
             if existing_content:
                 movies.update_one({"_id": existing_content['_id']}, {"$pull": {"files": {"quality": new_file['quality']}}})
                 update_doc["$push"] = {"files": new_file}
                 movies.update_one({"_id": existing_content['_id']}, update_doc)
-                print(f"SUCCESS: Movie file ({quality}) updated.")
             else:
                 movie_doc = {**tmdb_data, "type": "movie", "files": [new_file], "languages": parsed_info.get('languages', [])}
                 movies.insert_one(movie_doc)
-                print("SUCCESS: New movie created.")
 
-    # --- ব্যক্তিগত চ্যাট থেকে আসা মেসেজ হ্যান্ডলিং ---
     elif 'message' in data:
         message = data['message']
         chat_id = message['chat']['id']
-        text = message.get('text', '')
+        text = message.get('text', '').strip()
         
-        # --- /add কমান্ড হ্যান্ডেল করার যুক্তি ---
-        if text.startswith('/add') and str(chat_id) in ADMIN_USER_IDS:
-            if text.strip() == '/add':
-                template_text = "/add মুভির নাম (সাল) | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক"
-                reply_text = f"👇 নিচের ফরম্যাটটি কপি করে তথ্য যোগ করুন:\n\n`{template_text}`\n\n*(সাল দেওয়া ঐচ্ছিক কিন্তু নির্ভুল ফলাফলের জন্য প্রস্তাবিত)*"
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
-                return jsonify(status='ok', reason='admin_command_template_sent')
-
+        if text.startswith('/add ') and str(chat_id) in ADMIN_USER_IDS:
             try:
-                command_body = text.split('/add ', 1)[1]
-                parts = command_body.split('|')
+                parts = text.split('/add ', 1)[1].split('|')
                 if len(parts) != 3: raise ValueError("Invalid format")
             except (IndexError, ValueError):
-                reply_text = "❌ ভুল ফরম্যাট!\nসঠিক ফরম্যাট:\n`/add মুভির নাম (সাল) | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\nসাহায্যের জন্য শুধু `/add` লিখে পাঠান।"
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
-                return jsonify(status='ok', reason='admin_command_invalid_format')
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/add` লিখে পাঠান।"})
+                return jsonify(status='ok')
 
             title_part, watch_link, download_link = parts[0].strip(), parts[1].strip(), parts[2].strip()
-            
-            year_match = re.search(r'\(?(\d{4})\)?$', title_part.strip())
-            year = None
-            title = title_part
-            if year_match:
-                year = year_match.group(1)
-                title = re.sub(r'\s*\(?\d{4}\)?$', '', title_part).strip()
+            year_match = re.search(r'\(?(\d{4})\)?$', title_part)
+            year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part).strip()) if year_match else (None, title_part)
 
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ `{title}` (সাল: {year or 'N/A'}) এর তথ্য খোঁজা হচ্ছে..." , 'parse_mode': 'Markdown'})
-
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ মুভি `{title}` (সাল: {year or 'N/A'}) এর তথ্য খোঁজা হচ্ছে..." , 'parse_mode': 'Markdown'})
             tmdb_data = get_tmdb_details_from_api(title, "movie", year)
             
             if not tmdb_data:
-                reply_text = f"❌ দুঃখিত, '{title_part}' এর জন্য কোনো তথ্য পাওয়া যায়নি। দয়া করে নাম ও সাল পরীক্ষা করুন।"
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text})
-                return jsonify(status='ok', reason='tmdb_lookup_failed')
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো মুভি পাওয়া যায়নি।"})
+                return jsonify(status='ok')
 
             movie_doc = {**tmdb_data, "type": "movie", "watch_link": watch_link, "links": [{"quality": "Download", "url": download_link}], "files": [], "episodes": [], "season_packs": [], "is_trending": False, "is_coming_soon": False, "added_by_admin_bot": True, "created_at": datetime.utcnow()}
             movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
-            
-            final_reply = f"✅ সফলভাবে `{tmdb_data['title']}` যোগ করা হয়েছে এবং ওয়েবসাইটে লাইভ করা হয়েছে।"
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': final_reply, 'parse_mode': 'Markdown'})
-            return jsonify(status='ok', reason='admin_command_success')
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` মুভিটি ওয়েবসাইটে যোগ করা হয়েছে।", 'parse_mode': 'Markdown'})
         
-        # --- /start কমান্ডের যুক্তি ---
-        if text.startswith('/start'):
+        elif text == '/add' and str(chat_id) in ADMIN_USER_IDS:
+            reply_text = f"👇 মুভি যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/add মুভির নাম (সাল) | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\n*(সাল দেওয়া ঐচ্ছিক কিন্তু প্রস্তাবিত)*"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+
+        elif text.startswith('/addseries ') and str(chat_id) in ADMIN_USER_IDS:
+            try:
+                title_part = text.split('/addseries ', 1)[1].strip()
+            except IndexError:
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addseries` লিখে পাঠান।"})
+                return jsonify(status='ok')
+
+            year_match = re.search(r'\(?(\d{4})\)?$', title_part)
+            year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part).strip()) if year_match else (None, title_part)
+
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ সিরিজ `{title}` (সাল: {year or 'N/A'}) এর তথ্য খোঁজা হচ্ছে..." , 'parse_mode': 'Markdown'})
+            tmdb_data = get_tmdb_details_from_api(title, "series", year)
+
+            if not tmdb_data:
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো ওয়েব সিরিজ পাওয়া যায়নি।"})
+                return jsonify(status='ok')
+
+            series_doc = {**tmdb_data, "type": "series", "watch_link": None, "links": [], "files": [], "episodes": [], "season_packs": [], "is_trending": False, "is_coming_soon": False, "added_by_admin_bot": True, "created_at": datetime.utcnow()}
+            movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
+            reply_text = f"✅ সফলভাবে `{tmdb_data['title']}` সিরিজটি যোগ করা হয়েছে।\n\n**এখন অ্যাডমিন প্যানেল থেকে এর এপিসোড/সিজন প্যাক লিঙ্কগুলো যোগ করুন।**"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+        
+        elif text == '/addseries' and str(chat_id) in ADMIN_USER_IDS:
+            reply_text = f"👇 ওয়েব সিরিজ যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/addseries সিরিজের নাম (সাল)`\n\n*(শুধুমাত্র সিরিজের মূল পাতাটি তৈরি হবে। এপিসোড লিঙ্ক অ্যাডমিন প্যানেল থেকে যোগ করতে হবে।)*"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+
+        elif text.startswith('/start'):
             parts = text.split()
             if len(parts) > 1:
                 try:
                     payload_parts = parts[1].split('_')
                     content = movies.find_one({"_id": ObjectId(payload_parts[0])})
                     if not content: return jsonify(status='ok')
-
                     message_to_copy_id, file_info_text = None, ""
-                    
                     if len(payload_parts) == 2 and payload_parts[1].startswith('S'):
                         season_num = int(payload_parts[1][1:])
                         pack = next((p for p in content.get('season_packs', []) if p.get('season') == season_num), None)
                         if pack: message_to_copy_id, file_info_text = pack.get('message_id'), f"Complete Season {season_num}"
-                    
                     elif content.get('type') == 'series' and len(payload_parts) == 3:
                         s_num, e_num = int(payload_parts[1]), int(payload_parts[2])
                         episode = next((ep for ep in content.get('episodes', []) if ep.get('season') == s_num and ep.get('episode_number') == e_num), None)
                         if episode: message_to_copy_id, file_info_text = episode.get('message_id'), f"S{s_num:02d}E{e_num:02d}"
-
                     elif content.get('type') == 'movie' and len(payload_parts) == 2:
                         quality = payload_parts[1]
                         file = next((f for f in content.get('files', []) if f.get('quality') == quality), None)
@@ -1126,7 +1096,6 @@ def telegram_webhook():
                         caption_text = (f"🎬 *{escape_markdown(content['title'])}* {escape_markdown(file_info_text)}\n\n✅ *Successfully Sent To Your PM*\n\n🔰 Join Our Main Channel\n➡️ [{escape_markdown(BOT_USERNAME)} Main]({MAIN_CHANNEL_LINK})\n\n📢 Join Our Update Channel\n➡️ [{escape_markdown(BOT_USERNAME)} Official]({UPDATE_CHANNEL_LINK})\n\n💬 For Any Help or Request\n➡️ [Contact Developer]({DEVELOPER_USER_LINK})")
                         payload = {'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': message_to_copy_id, 'caption': caption_text, 'parse_mode': 'MarkdownV2'}
                         res = requests.post(f"{TELEGRAM_API_URL}/copyMessage", json=payload).json()
-                        
                         if res.get('ok'):
                             scheduler.add_job(func=delete_message_after_delay, trigger='date', run_date=datetime.now() + timedelta(minutes=30), args=[chat_id, res['result']['message_id']], id=f'del_{chat_id}_{res["result"]["message_id"]}', replace_existing=True)
                         else: 
