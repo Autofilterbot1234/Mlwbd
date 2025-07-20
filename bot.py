@@ -21,7 +21,7 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 # --- একাধিক অ্যাডমিন আইডি (কমা দিয়ে আলাদা করা) ---
-ADMIN_USER_IDS_STR = os.environ.get("ADMIN_USER_IDS")
+ADMIN_USER_IDS_STR = os.environ.get("ADMIN_USER_IDS") 
 ADMIN_USER_IDS = [uid.strip() for uid in ADMIN_USER_IDS_STR.split(',')] if ADMIN_USER_IDS_STR else []
 
 # আপনার চ্যানেল এবং ডেভেলপারের তথ্য
@@ -310,14 +310,17 @@ detail_html = """
   .detail-meta span { font-weight: 700; color: var(--text-light); }
   .detail-meta span i { margin-right: 5px; color: var(--text-dark); }
   .detail-overview { font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px; }
-  .action-btn { background-color: var(--netflix-red); color: white; padding: 15px 30px; font-size: 1.2rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; margin-bottom: 15px; transition: all 0.2s ease; }
-  .action-btn:hover { transform: scale(1.05); background-color: #f61f29; }
+  
+  .action-buttons-container { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
+  .action-btn { background-color: var(--netflix-red); color: white; padding: 15px 30px; font-size: 1.2rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease; flex-grow: 1; justify-content: center; }
+  .action-btn.download { background-color: #3b82f6; } /* Blue for download */
+  .action-btn:hover { transform: scale(1.02); filter: brightness(1.1); }
+
   .section-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; padding-bottom: 5px; border-bottom: 2px solid var(--netflix-red); display: inline-block; }
   .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; background: #000; border-radius: 8px; }
   .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
   .download-section, .episode-section { margin-top: 30px; }
   .download-button, .episode-button { display: inline-block; padding: 12px 25px; background-color: #444; color: white; text-decoration: none; border-radius: 4px; font-weight: 700; transition: background-color 0.3s ease; margin-right: 10px; margin-bottom: 10px; text-align: center; vertical-align: middle; }
-  .copy-button { background-color: #555; color: white; border: none; padding: 8px 15px; font-size: 0.9rem; cursor: pointer; border-radius: 4px; margin-left: -5px; margin-bottom: 10px; vertical-align: middle; }
   .episode-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 15px; border-radius: 5px; background-color: #1a1a1a; border-left: 4px solid var(--netflix-red); }
   .episode-title { font-size: 1.1rem; font-weight: 500; color: #fff; }
   .ad-container { margin: 30px 0; text-align: center; }
@@ -346,7 +349,7 @@ detail_html = """
   @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
   @media (max-width: 992px) { .detail-content-wrapper { flex-direction: column; align-items: center; text-align: center; } .detail-info { max-width: 100%; } .detail-title { font-size: 3.5rem; } }
   @media (max-width: 768px) { .detail-header { padding: 20px; } .detail-hero { padding: 80px 20px 40px; } .detail-poster { width: 60%; max-width: 220px; height: auto; } .detail-title { font-size: 2.2rem; }
-  .action-btn, .download-button { display: block; width: 100%; max-width: 320px; margin: 0 auto 10px auto; }
+  .action-buttons-container { flex-direction: column; }
   .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-button { width: 100%; }
   .section-title { margin-left: 15px !important; } .related-section-container { padding: 20px 0; }
   .related-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; padding: 0 15px; } }
@@ -384,43 +387,39 @@ detail_html = """
         {% if movie.genres %}<span>{{ movie.genres | join(' • ') }}</span>{% endif %}
       </div>
       <p class="detail-overview">{{ movie.overview }}</p>
-      {% if movie.type == 'movie' and movie.watch_link %}<a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="action-btn"><i class="fas fa-play"></i> Watch Now</a>{% endif %}
+      
+      {% if movie.type == 'movie' and (movie.watch_link or (movie.links and movie.links[0])) %}
+      <div class="action-buttons-container">
+          {% if movie.watch_link %}
+              <a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="action-btn">
+                  <i class="fas fa-play"></i> Watch Now
+              </a>
+          {% endif %}
+          {% if movie.links and movie.links[0] %}
+              <a href="{{ movie.links[0].url }}" target="_blank" rel="noopener" class="action-btn download">
+                  <i class="fas fa-download"></i> Download Now
+              </a>
+          {% endif %}
+      </div>
+      {% endif %}
+
       {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
       {% if trailer_key %}<div class="trailer-section"><h3 class="section-title">Watch Trailer</h3><div class="video-container"><iframe src="https://www.youtube.com/embed/{{ trailer_key }}" frameborder="0" allowfullscreen></iframe></div></div>{% endif %}
       <div style="margin: 20px 0;"><a href="{{ url_for('contact', report_id=movie._id, title=movie.title) }}" class="download-button" style="background-color:#5a5a5a; text-align:center;"><i class="fas fa-flag"></i> Report a Problem</a></div>
+      
       {% if movie.is_coming_soon %}<h3 class="section-title">Coming Soon</h3>
       {% elif movie.type == 'movie' %}
-        <div class="download-section">
-          {% if movie.links %}<h3 class="section-title">Download Links</h3>{% for link_item in movie.links %}<div><a class="download-button" href="{{ link_item.url }}" target="_blank" rel="noopener"><i class="fas fa-download"></i> {{ link_item.quality }}</a><button class="copy-button" onclick="copyToClipboard('{{ link_item.url }}')"><i class="fas fa-copy"></i></button></div>{% endfor %}{% endif %}
-          {% if movie.files %}<h3 class="section-title">Get from Telegram</h3>{% for file in movie.files | sort(attribute='quality') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ file.quality }}" class="action-btn" style="background-color: #2AABEE; display: block; text-align:center; margin-top:10px; margin-bottom: 0;"><i class="fa-brands fa-telegram"></i> Get {{ file.quality }}</a>{% endfor %}{% endif %}
-        </div>
+        {% if movie.files %}<div class="download-section"><h3 class="section-title">Get from Telegram</h3>{% for file in movie.files | sort(attribute='quality') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ file.quality }}" class="action-btn" style="background-color: #2AABEE; display: block; text-align:center; margin-top:10px; margin-bottom: 0;"><i class="fa-brands fa-telegram"></i> Get {{ file.quality }}</a>{% endfor %}</div>{% endif %}
       {% elif movie.type == 'series' %}
         <div class="episode-section">
           <h3 class="section-title">Episodes & Seasons</h3>
-          
-          {# --- Season Packs --- #}
           {% if movie.season_packs %}
-            {% for pack in movie.season_packs | sort(attribute='season') %}
-              <div class="episode-item" style="background-color: #3e1a1a;">
-                <span class="episode-title">Complete Season {{ pack.season }} Pack</span>
-                <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button" style="background-color: var(--netflix-red);"><i class="fas fa-box-open"></i> Get Season Pack</a>
-              </div>
-            {% endfor %}
+            {% for pack in movie.season_packs | sort(attribute='season') %}<div class="episode-item" style="background-color: #3e1a1a;"><span class="episode-title">Complete Season {{ pack.season }} Pack</span><a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button" style="background-color: var(--netflix-red);"><i class="fas fa-box-open"></i> Get Season Pack</a></div>{% endfor %}
           {% endif %}
-
-          {# --- Individual Episodes --- #}
           {% if movie.episodes %}
-            {% for ep in movie.episodes | sort(attribute='episode_number') | sort(attribute='season') %}
-              <div class="episode-item">
-                <span class="episode-title">Season {{ ep.season }} - Episode {{ ep.episode_number }}</span>
-                <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button" style="background-color: #2AABEE;"><i class="fa-brands fa-telegram"></i> Get Episode</a>
-              </div>
-            {% endfor %}
+            {% for ep in movie.episodes | sort(attribute='episode_number') | sort(attribute='season') %}<div class="episode-item"><span class="episode-title">Season {{ ep.season }} - Episode {{ ep.episode_number }}</span><a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button" style="background-color: #2AABEE;"><i class="fa-brands fa-telegram"></i> Get Episode</a></div>{% endfor %}
           {% endif %}
-
-          {% if not movie.episodes and not movie.season_packs %}
-             <p>No episodes or season packs available yet.</p>
-          {% endif %}
+          {% if not movie.episodes and not movie.season_packs %}<p>No episodes or season packs available yet.</p>{% endif %}
         </div>
       {% endif %}
     </div>
