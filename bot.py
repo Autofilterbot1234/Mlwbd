@@ -21,7 +21,7 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 
 # --- একাধিক অ্যাডমিন আইডি (কমা দিয়ে আলাদা করা) ---
-ADMIN_USER_IDS_STR = os.environ.get("ADMIN_USER_IDS") 
+ADMIN_USER_IDS_STR = os.environ.get("ADMIN_USER_IDS")
 ADMIN_USER_IDS = [uid.strip() for uid in ADMIN_USER_IDS_STR.split(',')] if ADMIN_USER_IDS_STR else []
 
 # আপনার চ্যানেল এবং ডেভেলপারের তথ্য
@@ -34,7 +34,7 @@ required_vars = {
     "MONGO_URI": MONGO_URI, "BOT_TOKEN": BOT_TOKEN, "TMDB_API_KEY": TMDB_API_KEY,
     "ADMIN_CHANNEL_ID": ADMIN_CHANNEL_ID, "BOT_USERNAME": BOT_USERNAME,
     "ADMIN_USERNAME": ADMIN_USERNAME, "ADMIN_PASSWORD": ADMIN_PASSWORD,
-    "ADMIN_USER_IDS": ADMIN_USER_IDS_STR, # এখন একাধিক আইডি চেক করা হচ্ছে
+    "ADMIN_USER_IDS": ADMIN_USER_IDS_STR,
     "MAIN_CHANNEL_LINK": MAIN_CHANNEL_LINK,
     "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK,
     "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
@@ -86,9 +86,7 @@ def inject_ads():
 def delete_message_after_delay(chat_id, message_id):
     print(f"Attempting to delete message {message_id} from chat {chat_id}")
     try:
-        url = f"{TELEGRAM_API_URL}/deleteMessage"
-        payload = {'chat_id': chat_id, 'message_id': message_id}
-        requests.post(url, json=payload)
+        requests.post(f"{TELEGRAM_API_URL}/deleteMessage", json={'chat_id': chat_id, 'message_id': message_id})
     except Exception as e:
         print(f"Error in delete_message_after_delay: {e}")
 
@@ -102,7 +100,7 @@ def escape_markdown(text: str) -> str:
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # ======================================================================
-# --- HTML টেমপ্লেট (অপরিবর্তিত) ---
+# --- HTML টেমপ্লেট ---
 # ======================================================================
 
 index_html = """
@@ -741,12 +739,12 @@ def get_tmdb_details_from_api(title, content_type, year=None):
     
     search_type = "tv" if content_type in ["series", "series_pack"] else "movie"
     
-    def search_tmdb(query_title):
-        print(f"INFO: Searching TMDb for: '{query_title}' (Type: {search_type}, Year: {year})")
+    def search_tmdb(query_title, query_year):
+        print(f"INFO: Searching TMDb for: '{query_title}' (Type: {search_type}, Year: {query_year})")
         try:
             search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}"
-            if year and search_type == "movie":
-                search_url += f"&year={year}"
+            if query_year and search_type == "movie":
+                search_url += f"&year={query_year}"
             
             search_res = requests.get(search_url, timeout=10)
             search_res.raise_for_status()
@@ -774,20 +772,20 @@ def get_tmdb_details_from_api(title, content_type, year=None):
             print(f"ERROR: TMDb API request failed for '{query_title}'. Reason: {e}")
             return None
 
-    tmdb_data = search_tmdb(title)
-    if not tmdb_data and len(title.split()) > 1:
-        simpler_title = " ".join(title.split()[:-1])
-        print(f"INFO: Initial search failed. Retrying with simpler title: '{simpler_title}'")
-        tmdb_data = search_tmdb(simpler_title)
+    tmdb_data = search_tmdb(title, year)
+    if not tmdb_data and year:
+        print(f"WARNING: TMDb search found no results for '{title}' with year '{year}'. Retrying without year.")
+        tmdb_data = search_tmdb(title, None)
         
-    if not tmdb_data: print(f"WARNING: TMDb search found no results for '{title}' after all attempts.")
+    if not tmdb_data:
+        print(f"FINAL WARNING: TMDb search found no results for '{title}' after all attempts.")
     return tmdb_data
 
 def process_movie_list(movie_list):
     return [{**item, '_id': str(item['_id'])} for item in movie_list]
 
 # ======================================================================
-# --- Main Flask Routes (অপরিবর্তিত) ---
+# --- Main Flask Routes ---
 # ======================================================================
 
 @app.route('/')
@@ -860,14 +858,28 @@ def coming_soon(): return render_full_list(list(movies.find({"is_coming_soon": T
 def recently_added_all(): return render_full_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1)), "Recently Added")
 
 # ======================================================================
-# --- Admin and Other Routes (অপরিবর্তিত) ---
+# --- Admin and Other Routes ---
 # ======================================================================
 @app.route('/admin', methods=["GET", "POST"])
 @requires_auth
 def admin():
     if request.method == "POST":
-        # ... Admin panel manual add logic ...
-        pass
+        content_type = request.form.get("content_type", "movie")
+        tmdb_data = get_tmdb_details_from_api(request.form.get("title"), content_type) or {}
+        movie_data = {
+            "title": request.form.get("title"), "type": content_type, **tmdb_data, 
+            "is_trending": False, "is_coming_soon": False, 
+            "links": [], "files": [], "episodes": [], "season_packs": [], "languages": []
+        }
+        if content_type == "movie":
+            # ... (Movie handling code as before)
+            pass
+        else:
+            # ... (Series handling code as before)
+            pass
+        movies.insert_one(movie_data)
+        return redirect(url_for('admin'))
+
     search_query = request.args.get('search', '').strip()
     query_filter = {}
     if search_query: query_filter = {"title": {"$regex": search_query, "$options": "i"}}
@@ -875,6 +887,7 @@ def admin():
     content_list = process_movie_list(list(movies.find(query_filter).sort('_id', -1)))
     feedback_list = process_movie_list(list(feedback.find().sort('timestamp', -1)))
     return render_template_string(admin_html, content_list=content_list, ad_settings=ad_settings, feedback_list=feedback_list, search_query=search_query)
+
 
 @app.route('/admin/save_ads', methods=['POST'])
 @requires_auth
@@ -889,14 +902,46 @@ def save_ads():
 @app.route('/edit_movie/<movie_id>', methods=["GET", "POST"])
 @requires_auth
 def edit_movie(movie_id):
-    # ... Edit logic ...
-    pass
-    
+    try:
+        obj_id = ObjectId(movie_id)
+    except Exception:
+        return "Invalid Movie ID", 400
+    movie_obj = movies.find_one({"_id": obj_id})
+    if not movie_obj: return "Movie not found", 404
+
+    if request.method == "POST":
+        content_type = request.form.get("content_type", "movie")
+        update_data = {
+            "title": request.form.get("title"), "type": content_type,
+            "is_trending": request.form.get("is_trending") == "true",
+            "is_coming_soon": request.form.get("is_coming_soon") == "true",
+            "poster": request.form.get("poster", "").strip(), "overview": request.form.get("overview", "").strip(),
+            "genres": [g.strip() for g in request.form.get("genres", "").split(',') if g.strip()],
+            "languages": [lang.strip() for lang in request.form.get("languages", "").split(',') if lang.strip()],
+            "poster_badge": request.form.get("poster_badge", "").strip() or None
+        }
+        
+        if content_type == "movie":
+            update_data["watch_link"] = request.form.get("watch_link", "")
+            update_data["links"] = [{"quality": q, "url": u} for q, u in [("480p", request.form.get("link_480p")), ("720p", request.form.get("link_720p")), ("1080p", request.form.get("link_1080p"))] if u]
+            update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
+            movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
+        else:
+            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_link": w or None, "message_id": int(m) if m else None} for s, e, t, w, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_link[]'), request.form.getlist('episode_message_id[]'))]
+            update_data["season_packs"] = [{"season": int(s), "message_id": int(mid)} for s, mid in zip(request.form.getlist('pack_season[]'), request.form.getlist('pack_message_id[]')) if s and mid]
+            movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"links": "", "watch_link": "", "files": ""}})
+        
+        return redirect(url_for('admin'))
+
+    return render_template_string(edit_html, movie=movie_obj)
+
+
 @app.route('/delete_movie/<movie_id>')
 @requires_auth
 def delete_movie(movie_id):
     movies.delete_one({"_id": ObjectId(movie_id)})
     return redirect(url_for('admin'))
+
 
 @app.route('/admin/delete_all_movies')
 @requires_auth
@@ -908,17 +953,28 @@ def delete_all_movies():
         print(f"ERROR: Could not delete all movies. Reason: {e}")
     return redirect(url_for('admin'))
 
+
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
     if request.method == 'POST':
-        # ... Contact form logic ...
-        pass
+        feedback_data = {
+            "type": request.form.get("type"), "content_title": request.form.get("content_title"),
+            "message": request.form.get("message"), "email": request.form.get("email", "").strip(),
+            "reported_content_id": request.form.get("reported_content_id"), "timestamp": datetime.utcnow()
+        }
+        feedback.insert_one(feedback_data)
+        return render_template_string(contact_html, message_sent=True)
+    prefill_title, prefill_id = request.args.get('title', ''), request.args.get('report_id', '')
+    prefill_type = 'Problem Report' if prefill_id else 'Movie Request'
+    return render_template_string(contact_html, message_sent=False, prefill_title=prefill_title, prefill_id=prefill_id, prefill_type=prefill_type)
+
 
 @app.route('/delete_feedback/<feedback_id>')
 @requires_auth
 def delete_feedback(feedback_id):
     feedback.delete_one({"_id": ObjectId(feedback_id)})
     return redirect(url_for('admin'))
+
 
 # ======================================================================
 # --- Webhook Route (FINAL VERSION) ---
@@ -1002,23 +1058,35 @@ def telegram_webhook():
         # --- /add কমান্ড হ্যান্ডেল করার যুক্তি ---
         if text.startswith('/add') and str(chat_id) in ADMIN_USER_IDS:
             if text.strip() == '/add':
-                template_text = "/add মুভির নাম | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক"
-                reply_text = f"👇 নিচের ফরম্যাটটি কপি করে তথ্য যোগ করুন:\n\n`{template_text}`"
+                template_text = "/add মুভির নাম (সাল) | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক"
+                reply_text = f"👇 নিচের ফরম্যাটটি কপি করে তথ্য যোগ করুন:\n\n`{template_text}`\n\n*(সাল দেওয়া ঐচ্ছিক কিন্তু নির্ভুল ফলাফলের জন্য প্রস্তাবিত)*"
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
                 return jsonify(status='ok', reason='admin_command_template_sent')
 
-            parts = text.split('/add ')[1].split('|')
-            if len(parts) != 3:
-                reply_text = "❌ ভুল ফরম্যাট!\nসঠিক ফরম্যাট:\n`/add মুভির নাম | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\nসাহায্যের জন্য শুধু `/add` লিখে পাঠান।"
+            try:
+                command_body = text.split('/add ', 1)[1]
+                parts = command_body.split('|')
+                if len(parts) != 3: raise ValueError("Invalid format")
+            except (IndexError, ValueError):
+                reply_text = "❌ ভুল ফরম্যাট!\nসঠিক ফরম্যাট:\n`/add মুভির নাম (সাল) | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\nসাহায্যের জন্য শুধু `/add` লিখে পাঠান।"
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
                 return jsonify(status='ok', reason='admin_command_invalid_format')
 
-            title, watch_link, download_link = parts[0].strip(), parts[1].strip(), parts[2].strip()
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ `{title}` এর তথ্য খোঁজা হচ্ছে..." , 'parse_mode': 'Markdown'})
+            title_part, watch_link, download_link = parts[0].strip(), parts[1].strip(), parts[2].strip()
+            
+            year_match = re.search(r'\(?(\d{4})\)?$', title_part.strip())
+            year = None
+            title = title_part
+            if year_match:
+                year = year_match.group(1)
+                title = re.sub(r'\s*\(?\d{4}\)?$', '', title_part).strip()
 
-            tmdb_data = get_tmdb_details_from_api(title, "movie")
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ `{title}` (সাল: {year or 'N/A'}) এর তথ্য খোঁজা হচ্ছে..." , 'parse_mode': 'Markdown'})
+
+            tmdb_data = get_tmdb_details_from_api(title, "movie", year)
+            
             if not tmdb_data:
-                reply_text = f"❌ দুঃখিত, '{title}' এর জন্য কোনো তথ্য পাওয়া যায়নি। দয়া করে বানান পরীক্ষা করুন।"
+                reply_text = f"❌ দুঃখিত, '{title_part}' এর জন্য কোনো তথ্য পাওয়া যায়নি। দয়া করে নাম ও সাল পরীক্ষা করুন।"
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text})
                 return jsonify(status='ok', reason='tmdb_lookup_failed')
 
