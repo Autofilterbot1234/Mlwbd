@@ -319,9 +319,13 @@ detail_html = """
   .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; background: #000; border-radius: 8px; }
   .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
   .download-section, .episode-section { margin-top: 30px; }
-  .download-button, .episode-button { display: inline-block; padding: 12px 25px; background-color: #444; color: white; text-decoration: none; border-radius: 4px; font-weight: 700; transition: background-color 0.3s ease; margin-right: 10px; margin-bottom: 10px; text-align: center; vertical-align: middle; }
+  .download-button { display: inline-block; padding: 12px 25px; background-color: #444; color: white; text-decoration: none; border-radius: 4px; font-weight: 700; transition: background-color 0.3s ease; margin-right: 10px; margin-bottom: 10px; text-align: center; vertical-align: middle; }
   .episode-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 15px; border-radius: 5px; background-color: #1a1a1a; border-left: 4px solid var(--netflix-red); }
-  .episode-title { font-size: 1.1rem; font-weight: 500; color: #fff; }
+  .episode-title { font-size: 1.1rem; font-weight: 500; color: #fff; flex-grow: 1; }
+  .episode-buttons { display: flex; gap: 10px; flex-shrink: 0; }
+  .episode-button { display: inline-flex; align-items:center; gap: 8px; padding: 8px 15px; background-color: #444; color: white; text-decoration: none; border-radius: 4px; font-weight: 700; transition: background-color 0.3s ease; }
+  .episode-button.download { background-color: #3b82f6; }
+  .episode-button.telegram { background-color: #2AABEE; }
   .ad-container { margin: 30px 0; text-align: center; }
   .related-section-container { padding: 40px 0; background-color: #181818; }
   .related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; padding: 0 50px; }
@@ -329,17 +333,8 @@ detail_html = """
   .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
   .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
   .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
-  @keyframes rgb-glow {
-    0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; }
-    33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; }
-    66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; }
-  }
-  .poster-badge {
-    position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5;
-    font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2);
-    animation: rgb-glow 3s linear infinite;
-  }
+  @keyframes rgb-glow { 0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; } 33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; } 66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; } }
+  .poster-badge { position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); animation: rgb-glow 3s linear infinite; }
   .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
   .rating-badge .fa-star { color: #f5c518; }
   .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
@@ -349,7 +344,7 @@ detail_html = """
   @media (max-width: 992px) { .detail-content-wrapper { flex-direction: column; align-items: center; text-align: center; } .detail-info { max-width: 100%; } .detail-title { font-size: 3.5rem; } }
   @media (max-width: 768px) { .detail-header { padding: 20px; } .detail-hero { padding: 80px 20px 40px; } .detail-poster { width: 60%; max-width: 220px; height: auto; } .detail-title { font-size: 2.2rem; }
   .action-buttons-container { flex-direction: column; }
-  .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-button { width: 100%; }
+  .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-buttons { width: 100%; justify-content: space-between; } .episode-button { flex-grow: 1; justify-content: center; }
   .section-title { margin-left: 15px !important; } .related-section-container { padding: 20px 0; }
   .related-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; padding: 0 15px; } }
 </style>
@@ -413,17 +408,23 @@ detail_html = """
         <div class="episode-section">
           <h3 class="section-title">Episodes & Seasons</h3>
           {% if movie.season_packs %}
-            {% for pack in movie.season_packs | sort(attribute='season') %}<div class="episode-item" style="background-color: #3e1a1a;"><span class="episode-title">Complete Season {{ pack.season }} Pack</span><a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button" style="background-color: var(--netflix-red);"><i class="fas fa-box-open"></i> Get Season Pack</a></div>{% endfor %}
+            {% for pack in movie.season_packs | sort(attribute='season') %}<div class="episode-item" style="background-color: #3e1a1a;"><span class="episode-title">Complete Season {{ pack.season }} Pack</span><a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button telegram"><i class="fas fa-box-open"></i> Get Pack</a></div>{% endfor %}
           {% endif %}
           {% if movie.episodes %}
             {% for ep in movie.episodes | sort(attribute='episode_number') | sort(attribute='season') %}
               <div class="episode-item">
                 <span class="episode-title">S{{ "%02d"|format(ep.season) }}E{{ "%02d"|format(ep.episode_number) }}: {{ ep.title or 'Episode ' + ep.episode_number|string }}</span>
-                {% if ep.watch_link %}
-                  <a href="{{ ep.watch_link }}" target="_blank" class="episode-button"><i class="fas fa-play"></i> Watch Episode</a>
-                {% elif ep.message_id %}
-                  <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button" style="background-color: #2AABEE;"><i class="fa-brands fa-telegram"></i> Get Episode</a>
-                {% endif %}
+                <div class="episode-buttons">
+                    {% if ep.watch_link %}
+                      <a href="{{ url_for('watch_episode', movie_id=movie._id, season=ep.season, episode=ep.episode_number) }}" class="episode-button"><i class="fas fa-play"></i> Watch</a>
+                    {% endif %}
+                     {% if ep.download_link %}
+                      <a href="{{ ep.download_link }}" target="_blank" class="episode-button download"><i class="fas fa-download"></i> Download</a>
+                    {% endif %}
+                    {% if ep.message_id %}
+                      <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get</a>
+                    {% endif %}
+                </div>
               </div>
             {% endfor %}
           {% endif %}
@@ -548,7 +549,7 @@ hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray)
     function confirmDelete(id, title) { if (confirm('Delete "' + title + '"?')) window.location.href = '/delete_movie/' + id; }
     function toggleFields() { var isSeries = document.getElementById('content_type').value === 'series'; document.getElementById('episode_fields').style.display = isSeries ? 'block' : 'none'; document.getElementById('movie_fields').style.display = isSeries ? 'none' : 'block'; }
     function addTelegramFileField() { const c = document.getElementById('telegram_files_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Quality (e.g., 720p):</label><input type="text" name="telegram_quality[]" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>`; c.appendChild(d); }
-    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><hr><p><b>Provide ONE of the following:</b></p><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><p><b>OR</b> Watch Link:</p><div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
+    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" /></div><div class="form-group"><label>Download Link:</label><input type="url" name="episode_download_link[]" /></div><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
     document.addEventListener('DOMContentLoaded', toggleFields);
   </script>
 </body></html>
@@ -616,10 +617,9 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
         <div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="{{ ep.season or 1 }}" required /></div>
         <div class="form-group"><label>Ep Number:</label><input type="number" name="episode_number[]" value="{{ ep.episode_number }}" required /></div>
         <div class="form-group"><label>Ep Title:</label><input type="text" name="episode_title[]" value="{{ ep.title or '' }}" /></div>
-        <hr><p><b>Provide ONE of the following:</b></p>
-        <div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" value="{{ ep.message_id or '' }}" /></div>
-        <p><b>OR</b> Watch Link:</p>
         <div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" value="{{ ep.watch_link or '' }}" /></div>
+        <div class="form-group"><label>Download Link:</label><input type="url" name="episode_download_link[]" value="{{ ep.download_link or '' }}" /></div>
+        <div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" value="{{ ep.message_id or '' }}" /></div>
         <button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>
       </div>{% endfor %}{% endif %}</div><button type="button" onclick="addEpisodeField()" class="add-btn">Add Episode</button>
     </div>
@@ -633,7 +633,7 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
   <script>
     function toggleFields() { var isSeries = document.getElementById('content_type').value === 'series'; document.getElementById('episode_fields').style.display = isSeries ? 'block' : 'none'; document.getElementById('movie_fields').style.display = isSeries ? 'none' : 'block'; }
     function addTelegramFileField() { const c = document.getElementById('telegram_files_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Quality (e.g., 720p):</label><input type="text" name="telegram_quality[]" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>`; c.appendChild(d); }
-    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><hr><p><b>Provide ONE of the following:</b></p><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><p><b>OR</b> Watch Link:</p><div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
+    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><div class="form-group"><label>Watch Link (Embed):</label><input type="url" name="episode_watch_link[]" /></div><div class="form-group"><label>Download Link:</label><input type="url" name="episode_download_link[]" /></div><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
     function addSeasonPackField() { const c = document.getElementById('season_packs_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" required /></div><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="pack_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Pack</button>`; c.appendChild(d); }
     document.addEventListener('DOMContentLoaded', toggleFields);
   </script>
@@ -660,12 +660,53 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 """
 
 # ======================================================================
-# --- Helper Functions (Final Version) ---
+# --- Helper Functions ---
 # ======================================================================
 
 def parse_filename(filename):
-    # This function remains unchanged
-    pass
+    LANGUAGE_MAP = { 'hindi': 'Hindi', 'hin': 'Hindi', 'english': 'English', 'eng': 'English', 'bengali': 'Bengali', 'bangla': 'Bangla', 'ben': 'Bengali', 'tamil': 'Tamil', 'tam': 'Tamil', 'telugu': 'Telugu', 'tel': 'Telugu', 'kannada': 'Kannada', 'kan': 'Kannada', 'malayalam': 'Malayalam', 'mal': 'Malayalam', 'korean': 'Korean', 'kor': 'Korean', 'chinese': 'Chinese', 'chi': 'Chinese', 'japanese': 'Japanese', 'jap': 'Japanese', 'dual audio': ['Hindi', 'English'], 'dual': ['Hindi', 'English'], 'multi audio': ['Multi Audio'] }
+    JUNK_KEYWORDS = [ '1080p', '720p', '480p', '2160p', '4k', 'uhd', 'web-dl', 'webdl', 'webrip', 'brrip', 'bluray', 'dvdrip', 'hdrip', 'hdcam', 'camrip', 'hdts', 'x264', 'x265', 'hevc', 'avc', 'aac', 'ac3', 'dts', '5.1', '7.1', 'final', 'uncut', 'extended', 'remastered', 'unrated', 'nf', 'www', 'com', 'net', 'org', 'psa' ]
+    SEASON_PACK_KEYWORDS = ['complete', 'season', 'pack', 'all episodes', 'zip']
+    base_name, _ = os.path.splitext(filename)
+    processed_name = re.sub(r'[\._\[\]\(\)\{\}-]', ' ', base_name)
+    found_languages = []
+    temp_name_for_lang = processed_name.lower()
+    for keyword, lang_name in LANGUAGE_MAP.items():
+        if re.search(r'\b' + re.escape(keyword) + r'\b', temp_name_for_lang):
+            if isinstance(lang_name, list): found_languages.extend(lang_name)
+            else: found_languages.append(lang_name)
+    languages = sorted(list(set(found_languages))) if found_languages else []
+    season_pack_match = re.search(r'^(.*?)[\s\.]*(?:S|Season)[\s\.]?(\d{1,2})', processed_name, re.I)
+    if season_pack_match:
+        text_after_season = processed_name[season_pack_match.end():].lower()
+        is_pack = any(keyword in text_after_season for keyword in SEASON_PACK_KEYWORDS) or not re.search(r'\be\d', text_after_season)
+        if is_pack:
+            title = season_pack_match.group(1).strip()
+            season_num = int(season_pack_match.group(2))
+            for junk in JUNK_KEYWORDS + SEASON_PACK_KEYWORDS: title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
+            final_title = ' '.join(title.split()).title()
+            if final_title: return {'type': 'series_pack', 'title': final_title, 'season': season_num, 'languages': languages}
+    series_patterns = [
+        re.compile(r'^(.*?)[\s\.]*(?:S|Season)[\s\.]?(\d{1,2})[\s\.]*(?:E|Ep|Episode)[\s\.]?(\d{1,3})', re.I),
+        re.compile(r'^(.*?)[\s\.]*(?:E|Ep|Episode)[\s\.]?(\d{1,3})', re.I)
+    ]
+    for i, pattern in enumerate(series_patterns):
+        match = pattern.search(processed_name)
+        if match:
+            title = match.group(1).strip()
+            season_num = int(match.group(2)) if i == 0 else 1
+            episode_num = int(match.group(3)) if i == 0 else int(match.group(2))
+            for junk in JUNK_KEYWORDS: title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
+            final_title = ' '.join(title.split()).title()
+            if final_title: return {'type': 'series', 'title': final_title, 'season': season_num, 'episode': episode_num, 'languages': languages}
+    year_match = re.search(r'\b(19[5-9]\d|20\d{2})\b', processed_name)
+    year = year_match.group(1) if year_match else None
+    title_part = processed_name[:year_match.start()] if year_match else processed_name
+    temp_title = title_part
+    for lang_key in LANGUAGE_MAP.keys(): temp_title = re.sub(r'\b' + lang_key + r'\b', '', temp_title, flags=re.I)
+    for junk in JUNK_KEYWORDS: temp_title = re.sub(r'\b' + re.escape(junk) + r'\b', '', temp_title, flags=re.I)
+    final_title = ' '.join(temp_title.split()).title()
+    return {'type': 'movie', 'title': final_title, 'year': year, 'languages': languages} if final_title else None
 
 def get_tmdb_details_from_api(title, content_type, year=None):
     if not TMDB_API_KEY:
@@ -724,7 +765,7 @@ def process_movie_list(movie_list):
 # ======================================================================
 # --- Main Flask Routes ---
 # ======================================================================
-# Flask routes are unchanged from the previous version. They are correct.
+
 @app.route('/')
 def home():
     query = request.args.get('q')
@@ -766,6 +807,23 @@ def watch_movie(movie_id):
         if not movie or not movie.get("watch_link"): return "Content not found.", 404
         return render_template_string(watch_html, watch_link=movie["watch_link"], title=movie["title"])
     except Exception: return "An error occurred.", 500
+
+@app.route('/watch_episode/<movie_id>/<int:season>/<int:episode>')
+def watch_episode(movie_id, season, episode):
+    try:
+        movie = movies.find_one({"_id": ObjectId(movie_id), "type": "series"})
+        if not movie: return "Series not found", 404
+        
+        target_episode = next((ep for ep in movie.get('episodes', []) if ep.get('season') == season and ep.get('episode_number') == episode), None)
+        
+        if not target_episode or not target_episode.get("watch_link"):
+            return "Episode not found or no watch link available.", 404
+            
+        title = f"{movie['title']} - S{season:02d}E{episode:02d}"
+        return render_template_string(watch_html, watch_link=target_episode["watch_link"], title=title)
+    except Exception as e:
+        print(f"Error watching episode: {e}")
+        return "An error occurred.", 500
 
 def render_full_list(content_list, title):
     return render_template_string(index_html, movies=process_movie_list(content_list), query=title, is_full_page_list=True)
@@ -817,7 +875,7 @@ def admin():
             movie_data['links'] = links
             movie_data['files'] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
         else:
-             movie_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_link": w or None, "message_id": int(m) if m else None} for s, e, t, w, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_link[]'), request.form.getlist('episode_message_id[]'))]
+             movie_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_link": w or None, "download_link": d or None, "message_id": int(m) if m else None} for s, e, t, w, d, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_link[]'), request.form.getlist('episode_download_link[]'), request.form.getlist('episode_message_id[]'))]
         movies.insert_one(movie_data)
         return redirect(url_for('admin'))
 
@@ -871,7 +929,7 @@ def edit_movie(movie_id):
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
         else:
-            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_link": w or None, "message_id": int(m) if m else None} for s, e, t, w, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_link[]'), request.form.getlist('episode_message_id[]'))]
+            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_link": w or None, "download_link": d or None, "message_id": int(m) if m else None} for s, e, t, w, d, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_link[]'), request.form.getlist('episode_download_link[]'), request.form.getlist('episode_message_id[]'))]
             update_data["season_packs"] = [{"season": int(s), "message_id": int(mid)} for s, mid in zip(request.form.getlist('pack_season[]'), request.form.getlist('pack_message_id[]')) if s and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"links": "", "watch_link": "", "files": ""}})
         
@@ -944,7 +1002,6 @@ def telegram_webhook():
 
         # --- Admin Commands ---
         
-        # --- /add (Movie Only) Command ---
         if text.startswith('/add '):
             try:
                 parts = text.split('/add ', 1)[1].split('|')
@@ -970,7 +1027,6 @@ def telegram_webhook():
             reply_text = f"👇 মুভি যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/add মুভির নাম (সাল) | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`"
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
-        # --- /addseries (Series Page Only) Command ---
         elif text.startswith('/addseries '):
             try:
                 title_part = text.split('/addseries ', 1)[1].strip()
@@ -986,7 +1042,7 @@ def telegram_webhook():
 
                 series_doc = {**tmdb_data, "type": "series", "episodes": [], "season_packs": [], "is_trending": False, "is_coming_soon": False, "added_by_admin_bot": True, "created_at": datetime.utcnow()}
                 movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
-                reply_text = f"✅ সফলভাবে `{tmdb_data['title']}` সিরিজটি যোগ করা হয়েছে।\n\n**এখন অ্যাডমিন প্যানেল বা `/addepisode` কমান্ড দিয়ে এপিসোড যোগ করুন।**"
+                reply_text = f"✅ সফলভাবে `{tmdb_data['title']}` সিরিজটি যোগ করা হয়েছে।\n\n**এখন `/addepisode` কমান্ড দিয়ে এপিসোড যোগ করুন।**"
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
             except:
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addseries` লিখে পাঠান।"})
@@ -995,12 +1051,11 @@ def telegram_webhook():
             reply_text = f"👇 শুধুমাত্র সিরিজের পাতা তৈরি করতে (লিঙ্ক ছাড়া) এই ফরম্যাট ব্যবহার করুন:\n\n`/addseries সিরিজের নাম (সাল)`"
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
             
-        # --- /addepisode (Series Episode) Command ---
         elif text.startswith('/addepisode '):
             try:
                 parts = text.split('/addepisode ', 1)[1].split('|')
-                if len(parts) != 3: raise ValueError()
-                title_part, se_part, watch_link = parts[0].strip(), parts[1].strip(), parts[2].strip()
+                if len(parts) != 4: raise ValueError()
+                title_part, se_part, watch_link, download_link = parts[0].strip(), parts[1].strip(), parts[2].strip(), parts[3].strip()
                 
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part)
                 year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part).strip()) if year_match else (None, title_part)
@@ -1025,7 +1080,7 @@ def telegram_webhook():
                 else:
                     series_id = existing_series['_id']
 
-                new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_link": watch_link, "message_id": None}
+                new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_link": watch_link, "download_link": download_link, "message_id": None}
                 movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
                 movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
                 
@@ -1034,10 +1089,9 @@ def telegram_webhook():
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addepisode` লিখে পাঠান।"})
 
         elif text == '/addepisode':
-            reply_text = f"👇 সিরিজের এপিসোড যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/addepisode সিরিজের নাম (সাল) | S01E01 | ওয়াচ লিঙ্ক`\n\n*(যদি সিরিজটি আগে থেকে তৈরি না থাকে, তবে এটি স্বয়ংক্রিয়ভাবে তৈরি হয়ে যাবে।)*"
+            reply_text = f"👇 সিরিজের এপিসোড যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/addepisode সিরিজের নাম (সাল) | S01E01 | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\n*(সিরিজটি না থাকলে স্বয়ংক্রিয়ভাবে তৈরি হয়ে যাবে।)*"
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
-        # --- /start Command for users ---
         elif text.startswith('/start'):
             # This part handles deep linking for all users and welcome message
             pass
