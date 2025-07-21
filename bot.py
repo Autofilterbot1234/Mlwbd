@@ -7,7 +7,7 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
-from datetime import datetime, timedelta, timezone # <--- এখানে timezone যোগ করা হয়েছে
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # ======================================================================
@@ -131,30 +131,45 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
 
         title = content.get('title', 'No Title')
         poster_url = content.get('poster')
+        genres = content.get('genres', [])
+        rating = content.get('vote_average')
+        release_date = content.get('release_date')
+        
         escaped_title = escape_markdown(title)
         
-        caption = ""
+        caption_parts = [f"🎬 *{escaped_title}*"]
+
+        if release_date:
+            year = release_date.split('-')[0]
+            caption_parts.append(f"🗓️ *মুক্তির সাল:* {escape_markdown(year)}")
+            
+        if genres:
+            escaped_genres = escape_markdown(", ".join(genres))
+            caption_parts.append(f"🎭 *জনরা:* {escaped_genres}")
+
         if post_type == 'season_pack' and season_num:
+            caption_parts.insert(1, f"🔥 *Season {season_num} Pack Added*")
             pack = next((p for p in content.get('season_packs', []) if p['season'] == season_num), None)
             pack_langs = set()
             if pack:
                 for link in pack.get('watch_links', []) + pack.get('download_links', []):
-                    pack_langs.add(link.get('lang', 'N/A'))
+                    lang = link.get('lang', 'N/A').strip()
+                    if lang and lang != 'N/A':
+                        pack_langs.add(lang)
             languages = ", ".join(sorted(list(pack_langs))) or "Not Specified"
-            escaped_langs = escape_markdown(languages)
-
-            caption = (
-                f"🎬 *{escaped_title}*\n\n"
-                f"🔥 *Season {season_num} Pack Added*\n\n"
-                f"🗣️ *ভাষা:* {escaped_langs}"
-            )
+            if languages != "Not Specified":
+                caption_parts.append(f"🗣️ *ভাষা:* {escape_markdown(languages)}")
         else:
-            languages = ", ".join(content.get('languages', [])) or "Not Specified"
-            escaped_langs = escape_markdown(languages)
-            caption = (
-                f"🎬 *{escaped_title}*\n\n"
-                f"🗣️ *ভাষা:* {escaped_langs}"
-            )
+            languages = content.get('languages', [])
+            if languages:
+                 escaped_langs = escape_markdown(", ".join(languages))
+                 caption_parts.append(f"🗣️ *ভাষা:* {escaped_langs}")
+
+        if rating and float(rating) > 0:
+            escaped_rating = escape_markdown(f"{rating:.1f}/10")
+            caption_parts.append(f"⭐ *রেটিং:* {escaped_rating}")
+
+        caption = "\n\n".join(caption_parts)
 
         with app.app_context():
             website_link = f"{WEBSITE_URL.rstrip('/')}{url_for('movie_detail', movie_id=str(content_id))}"
@@ -766,7 +781,8 @@ def get_tmdb_details_from_api(title, content_type, year=None):
     def search_tmdb(query_title, query_year):
         print(f"INFO: Searching TMDb for: '{query_title}' (Type: {search_type}, Year: {query_year})")
         try:
-            search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}"
+            # API language parameter for Bengali details if available
+            search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}&language=bn-BD,en-US"
             if query_year and search_type == "movie":
                 search_url += f"&year={query_year}"
             elif query_year and search_type == "tv":
@@ -779,18 +795,36 @@ def get_tmdb_details_from_api(title, content_type, year=None):
             if not results: return None
             
             tmdb_id = results[0].get("id")
-            detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=videos"
+            detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=bn-BD,en-US&append_to_response=videos,translations"
             detail_res = requests.get(detail_url, timeout=10)
             detail_res.raise_for_status()
             res_json = detail_res.json()
 
+            # Get title and overview, prefer Bengali if available
+            overview = res_json.get("overview", "")
+            final_title = res_json.get("title") or res_json.get("name")
+            
+            # Find Bengali translation if primary is not Bengali
+            if res_json.get('translations'):
+                for trans in res_json['translations']['translations']:
+                    if trans['iso_639_1'] == 'bn':
+                        if trans['data']['overview']: overview = trans['data']['overview']
+                        if trans['data']['title']: final_title = trans['data']['title']
+                        break
+            
             trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
             
+            # Get original language name from translations
+            original_lang_code = res_json.get('original_language')
+            language_names = [t['english_name'] for t in res_json.get('spoken_languages', [])]
+
             details = {
-                "tmdb_id": tmdb_id, "title": res_json.get("title") or res_json.get("name"), 
+                "tmdb_id": tmdb_id, "title": final_title, 
                 "poster": f"https://image.tmdb.org/t/p/w500{res_json.get('poster_path')}" if res_json.get('poster_path') else None, 
-                "overview": res_json.get("overview"), "release_date": res_json.get("release_date") or res_json.get("first_air_date"), 
-                "genres": [g['name'] for g in res_json.get("genres", [])], "vote_average": res_json.get("vote_average"), "trailer_key": trailer_key
+                "overview": overview, "release_date": res_json.get("release_date") or res_json.get("first_air_date"), 
+                "genres": [g['name'] for g in res_json.get("genres", [])], 
+                "languages": language_names,
+                "vote_average": res_json.get("vote_average"), "trailer_key": trailer_key
             }
             print(f"SUCCESS: Found TMDb details for '{query_title}' (ID: {tmdb_id}).")
             return details
@@ -884,11 +918,18 @@ def admin():
     if request.method == "POST":
         content_type = request.form.get("content_type", "movie")
         tmdb_data = get_tmdb_details_from_api(request.form.get("title"), content_type) or {}
+        
         doc_data = {
-            "title": request.form.get("title"), "type": content_type, **tmdb_data, 
-            "is_trending": False, "is_coming_soon": False, 
-            "watch_links": [], "download_links": [], "files": [], "episodes": [], "season_packs": [], "languages": []
+            "title": request.form.get("title"), 
+            "type": content_type,
+            "is_trending": False, 
+            "is_coming_soon": False, 
+            "watch_links": [], "download_links": [], "files": [], "episodes": [], "season_packs": [],
+            "created_at": datetime.now(timezone.utc)
         }
+        # TMDb থেকে পাওয়া তথ্য যোগ করা
+        doc_data.update(tmdb_data)
+
         if content_type == "movie":
             doc_data['watch_links'] = parse_links_from_string(request.form.get('watch_links_str'))
             doc_data['download_links'] = parse_links_from_string(request.form.get('download_links_str'))
@@ -982,7 +1023,7 @@ def contact():
             "message": request.form.get("message"), 
             "email": request.form.get("email", "").strip(), 
             "reported_content_id": request.form.get("reported_content_id"), 
-            "timestamp": datetime.now(timezone.utc) # <--- আপডেট করা হয়েছে
+            "timestamp": datetime.now(timezone.utc)
         }
         feedback.insert_one(feedback_data)
         return render_template_string(contact_html, message_sent=True)
@@ -1059,7 +1100,7 @@ def telegram_webhook():
         if text.startswith('/add '):
             try:
                 parts = text.split('/add ', 1)[1].split('|')
-                if len(parts) != 3: raise ValueError()
+                if len(parts) != 3: raise ValueError("Incorrect format")
                 title_part, watch_links_str, download_links_str = [p.strip() for p in parts]
                 
                 lang_match = re.search(r'\[(.*?)\]', title_part)
@@ -1075,15 +1116,20 @@ def telegram_webhook():
                 if not tmdb_data:
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো মুভি পাওয়া যায়নি।"})
                     return jsonify(status='ok')
+                
+                # যদি কমান্ডে ভাষা দেওয়া থাকে, সেটাকে TMDb ভাষার সাথে যুক্ত করা
+                final_languages = tmdb_data.get('languages', [])
+                if badge and badge.title() not in final_languages:
+                    final_languages.insert(0, badge.title())
 
-                movie_doc = {**tmdb_data, "type": "movie", "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)} # <--- আপডেট করা হয়েছে
+                movie_doc = {**tmdb_data, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
                 
                 result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
                 
-                if result.upserted_id:
-                    post_to_public_channel(result.upserted_id, post_type='content')
+                content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})['_id']
+                post_to_public_channel(content_id_to_post, post_type='content')
                 
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` মুভিটি ওয়েবসাইটে যোগ করা হয়েছে।", 'parse_mode': 'Markdown'})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` মুভিটি ওয়েবসাইটে যোগ/আপডেট করা হয়েছে।", 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /add command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/add` লিখে পাঠান।"})
@@ -1108,8 +1154,12 @@ def telegram_webhook():
                 if not tmdb_data:
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো ওয়েব সিরিজ পাওয়া যায়নি।"})
                     return jsonify(status='ok')
+                
+                final_languages = tmdb_data.get('languages', [])
+                if badge and badge.title() not in final_languages:
+                    final_languages.insert(0, badge.title())
 
-                series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)} # <--- আপডেট করা হয়েছে
+                series_doc = {**tmdb_data, "type": "series", "languages": final_languages, "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)}
                 
                 result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
 
@@ -1151,7 +1201,7 @@ def telegram_webhook():
 
                 existing_series = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})
                 if not existing_series:
-                    series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)} # <--- আপডেট করা হয়েছে
+                    series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)}
                     result = movies.insert_one(series_doc)
                     series_id = result.inserted_id
                     post_to_public_channel(series_id, post_type='content')
