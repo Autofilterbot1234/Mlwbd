@@ -1081,7 +1081,6 @@ def telegram_webhook():
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
-
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
                 year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
 
@@ -1100,7 +1099,6 @@ def telegram_webhook():
                 movie_doc = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
                 
                 result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
-                
                 content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})['_id']
                 post_to_public_channel(content_id_to_post, post_type='content')
                 
@@ -1111,8 +1109,7 @@ def telegram_webhook():
         
         elif text == '/add':
             reply_text = (f"👇 Use the format below to add a movie:\n\n"
-                          f"`/add Movie Name (Year) [Language] | Watch Links | Download Links`\n\n"
-                          f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*")
+                          f"`/add Movie Name (Year) [Language] | Watch Links | Download Links`")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
         elif text.startswith('/addseries '):
@@ -1121,7 +1118,6 @@ def telegram_webhook():
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
-
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
                 year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
 
@@ -1140,11 +1136,10 @@ def telegram_webhook():
                 series_doc = {**tmdb_data, "title": user_title, "type": "series", "languages": final_languages, "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)}
                 
                 result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
-
                 if result.upserted_id:
                     post_to_public_channel(result.upserted_id, post_type='content')
 
-                reply_text = f"✅ Successfully added series `{user_title}`.\n\n**Now use `/addepisode` or `/addseasonpack` to add episodes/seasons.**"
+                reply_text = f"✅ Successfully added series `{user_title}`.\n\n**Now use `/addlink` to add episodes or season packs.**"
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /addseries command: {e}")
@@ -1153,74 +1148,58 @@ def telegram_webhook():
         elif text == '/addseries':
             reply_text = f"👇 Use this format to create a series page:\n\n`/addseries Series Name (Year) [Language]`"
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
-            
-        elif text.startswith('/addepisode '):
+        
+        elif text.startswith('/addlink '):
             try:
-                parts = text.split('/addepisode ', 1)[1].split('|')
+                parts = text.split('/addlink ', 1)[1].split('|')
                 if len(parts) != 4: raise ValueError("Incorrect format")
                 title_part, se_part, watch_links_str, download_links_str = [p.strip() for p in parts]
                 
                 user_title = re.sub(r'\s*\[.*?\]', '', title_part).strip()
                 user_title = re.sub(r'\s*\(?\d{4}\)?$', '', user_title).strip()
-                
-                se_match = re.match(r'S(\d+)E(\d+)', se_part, re.IGNORECASE)
-                if not se_match: raise ValueError("Invalid S/E format")
-                season_num, episode_num = int(se_match.group(1)), int(se_match.group(2))
 
                 series = movies.find_one({"title": user_title, "type": "series"})
                 if not series:
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Series `{user_title}` not found. Add it first with `/addseries`.", 'parse_mode': 'Markdown'})
                     return jsonify(status='ok')
-
+                
                 series_id = series['_id']
-                new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
-                movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
-                movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
-                
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added S{season_num:02d}E{episode_num:02d} to `{user_title}`.", 'parse_mode': 'Markdown'})
+                episode_match = re.match(r'S(\d+)E(\d+)', se_part, re.IGNORECASE)
+                season_match = re.match(r'^S(\d+)$', se_part, re.IGNORECASE)
+
+                if episode_match:
+                    season_num, episode_num = int(episode_match.group(1)), int(episode_match.group(2))
+                    new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str)}
+                    movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
+                    movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added S{season_num:02d}E{episode_num:02d} to `{user_title}`.", 'parse_mode': 'Markdown'})
+
+                elif season_match:
+                    season_num = int(season_match.group(1))
+                    new_pack = {"season": season_num, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str)}
+                    movies.update_one({"_id": series_id}, {"$pull": {"season_packs": {"season": season_num}}})
+                    movies.update_one({"_id": series_id}, {"$push": {"season_packs": new_pack}})
+                    post_to_public_channel(series_id, post_type='season_pack', season_num=season_num)
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{user_title}` and posted to channel.", 'parse_mode': 'Markdown'})
+                else:
+                    raise ValueError("Invalid season/episode format. Use `S01E01` for episode or `S01` for season pack.")
+
             except Exception as e:
-                print(f"Error in /addepisode command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addepisode` for help."})
-
-        elif text == '/addepisode':
-            reply_text = (f"👇 Use the format below to add an episode:\n\n"
-                          f"`/addepisode Series Name (Year) | S01E01 | Watch Links | Download Links`")
+                print(f"Error in /addlink command: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Wrong format or error: {e}. Use `/addlink` for help."})
+        
+        elif text == '/addlink':
+            reply_text = (
+                f"👇 Use this single command to add an episode OR a full season pack.\n\n"
+                f"Format:\n`/addlink Series Name (Year) | SxxExx_or_Sxx | Watch Links | Download Links`\n\n"
+                f"✨ *For an EPISODE:*\n`/addlink Arcane (2021) | S01E01 | Eng: url | 720p: url`\n\n"
+                f"✨ *For a full SEASON PACK:*\n`/addlink Arcane (2021) | S01 | Eng: url | 720p: url`"
+            )
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
-            
-        elif text.startswith('/addseasonpack '):
-            try:
-                parts = text.split('/addseasonpack ', 1)[1].split('|')
-                if len(parts) != 4: raise ValueError("Incorrect format")
-                title_part, season_part, watch_links_str, download_links_str = [p.strip() for p in parts]
-
-                user_title = re.sub(r'\s*\[.*?\]', '', title_part).strip()
-                user_title = re.sub(r'\s*\(?\d{4}\)?$', '', user_title).strip()
-
-                se_match = re.match(r'S(\d+)', season_part, re.IGNORECASE)
-                if not se_match: raise ValueError("Invalid season format")
-                season_num = int(se_match.group(1))
-
-                series = movies.find_one({"title": user_title, "type": "series"})
-                if not series:
-                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Series `{user_title}` not found. Add it first with `/addseries`.", 'parse_mode': 'Markdown'})
-                    return jsonify(status='ok')
-
-                new_pack = {"season": season_num, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
-                
-                movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
-                movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
-                
-                post_to_public_channel(series['_id'], post_type='season_pack', season_num=season_num)
-
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{series['title']}` and posted to channel.", 'parse_mode': 'Markdown'})
-            except Exception as e:
-                print(f"Error in /addseasonpack command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addseasonpack` for help."})
-
-        elif text == '/addseasonpack':
-            reply_text = (f"👇 Use the format below to add a season pack:\n\n"
-                          f"`/addseasonpack Series Name (Year) | S01 | Watch Links | Download Links`")
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+        
+        elif text.startswith(('/addepisode', '/addseasonpack')):
+             reply_text = "ℹ️ This command is outdated. Please use the new unified `/addlink` command. Type `/addlink` to see how to use it."
+             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text})
 
     return jsonify(status='ok')
 
