@@ -7,7 +7,7 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone # <--- এখানে timezone যোগ করা হয়েছে
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # ======================================================================
@@ -119,9 +119,6 @@ def parse_links_from_string(link_string: str) -> list:
 # --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য ---
 # ======================================================================
 def post_to_public_channel(content_id, post_type='content', season_num=None):
-    """
-    নতুন কন্টেন্ট বা সিজন প্যাক যোগ হলে পাবলিক চ্যানেলে পোস্ট পাঠায়।
-    """
     if not PUBLIC_CHANNEL_ID or not WEBSITE_URL:
         print("WARNING: PUBLIC_CHANNEL_ID or WEBSITE_URL is not set. Skipping public post.")
         return
@@ -137,7 +134,6 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         escaped_title = escape_markdown(title)
         
         caption = ""
-        # পোস্টের ধরন অনুযায়ী ক্যাপশন তৈরি
         if post_type == 'season_pack' and season_num:
             pack = next((p for p in content.get('season_packs', []) if p['season'] == season_num), None)
             pack_langs = set()
@@ -152,7 +148,7 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
                 f"🔥 *Season {season_num} Pack Added*\n\n"
                 f"🗣️ *ভাষা:* {escaped_langs}"
             )
-        else: # নতুন মুভি/সিরিজের জন্য ডিফল্ট ক্যাপশন
+        else:
             languages = ", ".join(content.get('languages', [])) or "Not Specified"
             escaped_langs = escape_markdown(languages)
             caption = (
@@ -980,7 +976,14 @@ def delete_all_movies():
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
     if request.method == 'POST':
-        feedback_data = { "type": request.form.get("type"), "content_title": request.form.get("content_title"), "message": request.form.get("message"), "email": request.form.get("email", "").strip(), "reported_content_id": request.form.get("reported_content_id"), "timestamp": datetime.utcnow() }
+        feedback_data = {
+            "type": request.form.get("type"), 
+            "content_title": request.form.get("content_title"), 
+            "message": request.form.get("message"), 
+            "email": request.form.get("email", "").strip(), 
+            "reported_content_id": request.form.get("reported_content_id"), 
+            "timestamp": datetime.now(timezone.utc) # <--- আপডেট করা হয়েছে
+        }
         feedback.insert_one(feedback_data)
         return render_template_string(contact_html, message_sent=True)
     prefill_title, prefill_id = request.args.get('title', ''), request.args.get('report_id', '')
@@ -1073,7 +1076,7 @@ def telegram_webhook():
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো মুভি পাওয়া যায়নি।"})
                     return jsonify(status='ok')
 
-                movie_doc = {**tmdb_data, "type": "movie", "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.utcnow()}
+                movie_doc = {**tmdb_data, "type": "movie", "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)} # <--- আপডেট করা হয়েছে
                 
                 result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
                 
@@ -1106,7 +1109,7 @@ def telegram_webhook():
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো ওয়েব সিরিজ পাওয়া যায়নি।"})
                     return jsonify(status='ok')
 
-                series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.utcnow()}
+                series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)} # <--- আপডেট করা হয়েছে
                 
                 result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
 
@@ -1148,7 +1151,7 @@ def telegram_webhook():
 
                 existing_series = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})
                 if not existing_series:
-                    series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.utcnow()}
+                    series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)} # <--- আপডেট করা হয়েছে
                     result = movies.insert_one(series_doc)
                     series_id = result.inserted_id
                     post_to_public_channel(series_id, post_type='content')
