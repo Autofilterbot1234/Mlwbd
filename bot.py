@@ -90,7 +90,7 @@ def parse_links_from_string(link_string: str) -> list:
     return links
 
 # ======================================================================
-# --- স্বয়ংক্রিয় চ্যানেল পোস্ট ফাংশন (উন্নত) ---
+# --- স্বয়ংক্রিয় চ্যানেল পোস্ট ফাংশন (চূড়ান্ত) ---
 # ======================================================================
 def send_update_to_channel(movie_id):
     if not PUBLIC_UPDATE_CHANNEL_ID:
@@ -113,13 +113,16 @@ def send_update_to_channel(movie_id):
             print(f"WARNING: Movie '{movie.get('title')}' has no poster. Cannot send photo.")
             return
 
-        title = escape_markdown(movie.get("title", "No Title"))
+        raw_title = movie.get("title", "No Title")
         year = movie.get("release_date", "").split('-')[0]
-        title_with_year = f"{title} ({year})" if year else title
-        caption_parts = [f"🎬 *{title_with_year}*"]
+        raw_title_with_year = f"{raw_title} ({year})" if year else raw_title
+        escaped_title_with_year = escape_markdown(raw_title_with_year)
+        
+        caption_parts = [f"🎬 *{escaped_title_with_year}*"]
         if badge := movie.get("poster_badge"): caption_parts.append(f"\n🏅 **Language:** {escape_markdown(badge)}")
         if genres := movie.get("genres"): caption_parts.append(f"🎭 **Genre:** {escape_markdown(', '.join(genres))}")
         caption = "\n".join(caption_parts)
+        
         website_url = f"{APP_BASE_URL.strip('/')}/movie/{movie['_id']}"
         reply_markup = {"inline_keyboard": [[{"text": "📥 Download / Watch on Website 🎬", "url": website_url}]]}
 
