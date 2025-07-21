@@ -94,40 +94,66 @@ def parse_links_from_string(link_string: str) -> list:
     return links
 
 # ======================================================================
-# --- স্বয়ংক্রিয় চ্যানেল পোস্ট ফাংশন ---
+# --- স্বয়ংক্রিয় চ্যানেল পোস্ট ফাংশন (আরও নির্ভরযোগ্য সংস্করণ) ---
 # ======================================================================
 def send_update_to_channel(movie_id):
     if not PUBLIC_UPDATE_CHANNEL_ID or not APP_BASE_URL:
         print("WARNING: PUBLIC_UPDATE_CHANNEL_ID or APP_BASE_URL not configured. Skipping channel post.")
         return
+
     try:
         movie = movies.find_one({"_id": ObjectId(movie_id)})
         if not movie:
-            print(f"ERROR: Could not find movie with ID {movie_id} to post update.")
+            print(f"ERROR: [send_update_to_channel] Could not find movie with ID {movie_id} to post update.")
             return
-        
+
         title = escape_markdown(movie.get("title", "N/A"))
         year = movie.get("release_date", "").split('-')[0]
         title_with_year = f"{title} ({year})" if year else title
+        
         caption_parts = [f"🎬 *{title_with_year}*"]
         
-        if badge := movie.get("poster_badge"): caption_parts.append(f"\n🏅 *Language:* {escape_markdown(badge)}")
-        if genres := movie.get("genres"): caption_parts.append(f"🎭 *Genre:* {escape_markdown(', '.join(genres))}")
+        if badge := movie.get("poster_badge"):
+            caption_parts.append(f"\n🏅 *Language:* {escape_markdown(badge)}")
+        if genres := movie.get("genres"):
+            caption_parts.append(f"🎭 *Genre:* {escape_markdown(', '.join(genres))}")
 
         caption = "\n".join(caption_parts)
-        website_url = f"{APP_BASE_URL.strip('/')}/movie/{movie['_id']}"
-        reply_markup = {"inline_keyboard": [[{"text": "📥 Download / Watch Now 🎬", "url": website_url}], [{"text": "Join Main Channel", "url": MAIN_CHANNEL_LINK}, {"text": "Join Update Channel", "url": UPDATE_CHANNEL_LINK}]]}
+        website_url = f"{APP_BASE_URL.strip('/')}/movie/{str(movie['_id'])}"
+        
+        reply_markup = {
+            "inline_keyboard": [
+                [{"text": "📥 Download / Watch Now 🎬", "url": website_url}],
+                [{"text": "Join Main Channel", "url": MAIN_CHANNEL_LINK}, {"text": "Join Update Channel", "url": UPDATE_CHANNEL_LINK}]
+            ]
+        }
 
-        payload = {'chat_id': PUBLIC_UPDATE_CHANNEL_ID, 'photo': movie.get('poster'), 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': reply_markup}
-        response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
+        poster_url = movie.get('poster')
+        
+        if poster_url and poster_url.startswith('http'):
+            payload = {'chat_id': PUBLIC_UPDATE_CHANNEL_ID, 'photo': poster_url, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': reply_markup}
+            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload, timeout=20)
+            api_method = "sendPhoto"
+        else:
+            print(f"WARNING: No valid poster found for movie '{movie.get('title')}'. Sending text message instead.")
+            text_message = caption + f"\n\n[Visit Website]({website_url})"
+            payload = {'chat_id': PUBLIC_UPDATE_CHANNEL_ID, 'text': text_message, 'parse_mode': 'MarkdownV2', 'reply_markup': reply_markup, 'disable_web_page_preview': True}
+            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload, timeout=20)
+            api_method = "sendMessage"
+
         response.raise_for_status()
         
-        if response.json().get('ok'):
-            print(f"SUCCESS: Posted update for '{movie.get('title')}' to channel {PUBLIC_UPDATE_CHANNEL_ID}.")
+        response_data = response.json()
+        if response_data.get('ok'):
+            print(f"SUCCESS: Posted update for '{movie.get('title')}' to channel {PUBLIC_UPDATE_CHANNEL_ID} using {api_method}.")
         else:
-            print(f"ERROR: Failed to post update to channel. Reason: {response.json().get('description')}")
+            error_description = response_data.get('description', 'Unknown error')
+            print(f"ERROR: Failed to post update to channel via {api_method}. Telegram API Error: {error_description}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"FATAL NETWORK ERROR in send_update_to_channel: {e}")
     except Exception as e:
-        print(f"FATAL ERROR in send_update_to_channel: {e}")
+        print(f"FATAL UNKNOWN ERROR in send_update_to_channel: {e}")
 
 # ======================================================================
 # --- HTML টেমপ্লেট ---
@@ -786,8 +812,12 @@ def recently_added_all(): return render_full_list(list(movies.find({"is_coming_s
 def admin():
     if request.method == "POST":
         content_type = request.form.get("content_type", "movie")
-        tmdb_data = get_tmdb_details_from_api(request.form.get("title"), content_type) or {}
-        doc_data = {"title": request.form.get("title"), "type": content_type, **tmdb_data, "is_trending": False, "is_coming_soon": False, "watch_links": [], "download_links": [], "files": [], "episodes": [], "season_packs": [], "languages": []}
+        manual_title = request.form.get("title")
+        doc_data = {"title": manual_title, "type": content_type, "created_at": datetime.utcnow()}
+        
+        tmdb_data = get_tmdb_details_from_api(manual_title, content_type) or {}
+        doc_data.update(tmdb_data)
+
         if content_type == "movie":
             doc_data.update({
                 'watch_links': parse_links_from_string(request.form.get('watch_links_str')),
@@ -795,9 +825,14 @@ def admin():
                 'files': [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             })
         else:
-            doc_data['episodes'] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
+            doc_data['episodes'] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m and m.isdigit() else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
+        
         result = movies.insert_one(doc_data)
-        if result.inserted_id: send_update_to_channel(result.inserted_id)
+        
+        if result.inserted_id:
+            print(f"INFO: New content '{manual_title}' added with ID {result.inserted_id}. Triggering channel post.")
+            send_update_to_channel(result.inserted_id)
+        
         return redirect(url_for('admin'))
 
     search_query = request.args.get('search', '').strip()
@@ -819,9 +854,18 @@ def edit_movie(movie_id):
     obj_id = ObjectId(movie_id)
     movie_obj = movies.find_one({"_id": obj_id})
     if not movie_obj: return "Movie not found", 404
+
     if request.method == "POST":
         content_type = request.form.get("content_type", "movie")
-        update_data = {"title": request.form.get("title"), "type": content_type, "is_trending": request.form.get("is_trending") == "true", "is_coming_soon": request.form.get("is_coming_soon") == "true", "poster": request.form.get("poster", "").strip(), "overview": request.form.get("overview", "").strip(), "genres": [g.strip() for g in request.form.get("genres", "").split(',') if g.strip()], "languages": [lang.strip() for lang in request.form.get("languages", "").split(',') if lang.strip()], "poster_badge": request.form.get("poster_badge", "").strip() or None}
+        update_data = {
+            "title": request.form.get("title"), "type": content_type,
+            "is_trending": request.form.get("is_trending") == "true", "is_coming_soon": request.form.get("is_coming_soon") == "true",
+            "poster": request.form.get("poster", "").strip(), "overview": request.form.get("overview", "").strip(),
+            "genres": [g.strip() for g in request.form.get("genres", "").split(',') if g.strip()],
+            "languages": [lang.strip() for lang in request.form.get("languages", "").split(',') if lang.strip()],
+            "poster_badge": request.form.get("poster_badge", "").strip() or None,
+            "updated_at": datetime.utcnow()
+        }
         
         if content_type == "movie":
             update_data["watch_links"] = parse_links_from_string(request.form.get('watch_links_str'))
@@ -829,12 +873,15 @@ def edit_movie(movie_id):
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
         else:
-            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
+            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m and m.isdigit() else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
             update_data["season_packs"] = [{"season": int(s), "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(mid) if mid and mid.isdigit() else None} for s, wl, dl, mid in zip(request.form.getlist('pack_season[]'), request.form.getlist('pack_watch_links_str[]'), request.form.getlist('pack_download_links_str[]'), request.form.getlist('pack_message_id[]')) if s]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"watch_links": "", "download_links": "", "files": ""}})
         
+        print(f"INFO: Content '{update_data['title']}' updated with ID {obj_id}. Triggering channel post.")
         send_update_to_channel(obj_id)
+        
         return redirect(url_for('admin'))
+
     return render_template_string(edit_html, movie=movie_obj)
 
 @app.route('/delete_movie/<movie_id>')
