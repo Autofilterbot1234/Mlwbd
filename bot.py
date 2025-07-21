@@ -6,7 +6,8 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
-from datetime import datetime, timezone #<-- পরিবর্তন করা হয়েছে
+from datetime import datetime, timezone
+from threading import Thread # <-- নির্ভরযোগ্য পোস্টিং-এর জন্য এটি যোগ করা হয়েছে
 
 # ======================================================================
 # --- আপনার ব্যক্তিগত ও অ্যাডমিন তথ্য (এনভায়রনমেন্ট থেকে লোড হবে) ---
@@ -96,7 +97,6 @@ def parse_links_from_string(link_string: str) -> list:
 # --- স্বয়ংক্রিয় চ্যানেল পোস্ট ফাংশন (চূড়ান্ত সংস্করণ) ---
 # ======================================================================
 def send_update_to_channel(movie_id):
-    # ভ্যারিয়েবল থেকে অতিরিক্ত স্পেস মুছে ফেলা হচ্ছে
     channel_id = PUBLIC_UPDATE_CHANNEL_ID.strip() if PUBLIC_UPDATE_CHANNEL_ID else None
     base_url = APP_BASE_URL.strip() if APP_BASE_URL else None
     
@@ -115,11 +115,8 @@ def send_update_to_channel(movie_id):
         title_with_year = f"{title} ({year})" if year else title
         
         caption_parts = [f"🎬 *{title_with_year}*"]
-        
-        if badge := movie.get("poster_badge"):
-            caption_parts.append(f"\n🏅 *Language:* {escape_markdown(badge)}")
-        if genres := movie.get("genres"):
-            caption_parts.append(f"🎭 *Genre:* {escape_markdown(', '.join(genres))}")
+        if badge := movie.get("poster_badge"): caption_parts.append(f"\n🏅 *Language:* {escape_markdown(badge)}")
+        if genres := movie.get("genres"): caption_parts.append(f"🎭 *Genre:* {escape_markdown(', '.join(genres))}")
 
         caption = "\n".join(caption_parts)
         website_url = f"{base_url.strip('/')}/movie/{str(movie['_id'])}"
@@ -762,13 +759,7 @@ def get_tmdb_details_from_api(title, content_type, year=None):
             
             trailer_key = next((v['key'] for v in detail_res.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
             
-            details = {
-                "tmdb_id": tmdb_id, "title": detail_res.get("title") or detail_res.get("name"),
-                "poster": poster_url, "overview": detail_res.get("overview"),
-                "release_date": detail_res.get("release_date") or detail_res.get("first_air_date"),
-                "genres": [g['name'] for g in detail_res.get("genres", [])],
-                "vote_average": detail_res.get("vote_average"), "trailer_key": trailer_key
-            }
+            details = { "tmdb_id": tmdb_id, "title": detail_res.get("title") or detail_res.get("name"), "poster": poster_url, "overview": detail_res.get("overview"), "release_date": detail_res.get("release_date") or detail_res.get("first_air_date"), "genres": [g['name'] for g in detail_res.get("genres", [])], "vote_average": detail_res.get("vote_average"), "trailer_key": trailer_key }
             print(f"SUCCESS: Found TMDb details for '{details['title']}'. Poster: {'Yes' if poster_url else 'No'}")
             return details
         except requests.RequestException as e:
@@ -834,7 +825,7 @@ def coming_soon(): return render_full_list(list(movies.find({"is_coming_soon": T
 def recently_added_all(): return render_full_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1)), "Recently Added")
 
 # ======================================================================
-# --- Admin and Other Routes ---
+# --- Admin and Other Routes (Threading সহ) ---
 # ======================================================================
 @app.route('/admin', methods=["GET", "POST"])
 @requires_auth
@@ -859,8 +850,10 @@ def admin():
         result = movies.insert_one(doc_data)
         
         if result.inserted_id:
-            print(f"INFO: New content '{manual_title}' added with ID {result.inserted_id}. Triggering channel post.")
-            send_update_to_channel(result.inserted_id)
+            print(f"INFO: New content '{manual_title}' added. Starting background thread for channel post.")
+            post_thread = Thread(target=send_update_to_channel, args=(result.inserted_id,))
+            post_thread.daemon = True
+            post_thread.start()
         
         return redirect(url_for('admin'))
 
@@ -906,8 +899,10 @@ def edit_movie(movie_id):
             update_data["season_packs"] = [{"season": int(s), "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(mid) if mid and mid.isdigit() else None} for s, wl, dl, mid in zip(request.form.getlist('pack_season[]'), request.form.getlist('pack_watch_links_str[]'), request.form.getlist('pack_download_links_str[]'), request.form.getlist('pack_message_id[]')) if s]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"watch_links": "", "download_links": "", "files": ""}})
         
-        print(f"INFO: Content '{update_data['title']}' updated with ID {obj_id}. Triggering channel post.")
-        send_update_to_channel(obj_id)
+        print(f"INFO: Content '{update_data['title']}' updated. Starting background thread for channel post.")
+        post_thread = Thread(target=send_update_to_channel, args=(obj_id,))
+        post_thread.daemon = True
+        post_thread.start()
         
         return redirect(url_for('admin'))
 
@@ -981,8 +976,11 @@ def telegram_webhook():
                 if not tmdb_data: requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title}' নামে কোনো মুভি পাওয়া যায়নি।"}); return jsonify(status='ok')
                 movie_doc = {**tmdb_data, "type": "movie", "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
                 movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
-                updated_movie = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]});
-                if updated_movie: send_update_to_channel(updated_movie["_id"])
+                updated_movie = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})
+                if updated_movie:
+                    post_thread = Thread(target=send_update_to_channel, args=(updated_movie["_id"],))
+                    post_thread.daemon = True
+                    post_thread.start()
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` যোগ করে চ্যানেলে পোস্ট করা হয়েছে।", 'parse_mode': 'Markdown'})
             except Exception as e: print(f"Error in /add: {e}"); requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/add` লিখে পাঠান।"})
 
@@ -998,7 +996,10 @@ def telegram_webhook():
                 series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)}
                 movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
                 updated_series = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})
-                if updated_series: send_update_to_channel(updated_series["_id"])
+                if updated_series:
+                    post_thread = Thread(target=send_update_to_channel, args=(updated_series["_id"],))
+                    post_thread.daemon = True
+                    post_thread.start()
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` সিরিজটি যোগ করে চ্যানেলে পোস্ট করা হয়েছে।\n\n**এখন `/addepisode` বা `/addseasonpack` কমান্ড দিয়ে এপিসোড/সিজন যোগ করুন।**", 'parse_mode': 'Markdown'})
             except Exception as e: print(f"Error in /addseries: {e}"); requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addseries` লিখে পাঠান।"})
 
