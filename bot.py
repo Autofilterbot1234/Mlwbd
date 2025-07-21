@@ -824,6 +824,7 @@ def process_movie_list(movie_list):
 # ======================================================================
 # --- Main Flask Routes ---
 # ======================================================================
+
 @app.route('/')
 def home():
     query = request.args.get('q')
@@ -1109,6 +1110,16 @@ def telegram_webhook():
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
         elif text.startswith('/addseries'):
+            if text == '/addseries':
+                reply_text = (
+                    f"👇 Use this command to add a new series.\n\n"
+                    f"*To create a series page ONLY:*\n`/addseries Series Name (Year) [Language]`\n\n"
+                    f"*To create AND add the first episode/season pack:*\n"
+                    f"`/addseries Series Name | SxxExx_or_Sxx | Watch Links | Download Links`"
+                )
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+                return jsonify(status='ok')
+
             try:
                 parts = text.split('|')
                 title_part = parts[0].replace('/addseries', '').strip()
@@ -1179,15 +1190,6 @@ def telegram_webhook():
             except Exception as e:
                 print(f"Error in /addseries command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addseries` for help."})
-        
-        elif text == '/addseries':
-             reply_text = (
-                f"👇 Use this command to add a new series.\n\n"
-                f"*To create a series page ONLY:*\n`/addseries Series Name (Year) [Language]`\n\n"
-                f"*To create AND add the first episode/season pack:*\n"
-                f"`/addseries Series Name | SxxExx_or_Sxx | Watch Links | Download Links`"
-            )
-             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
         
         elif text.startswith(('/addepisode', '/addseasonpack', '/addlink')):
              reply_text = "ℹ️ These commands are outdated. Please use the new, powerful `/addseries` command. Type `/addseries` to see how to use it."
