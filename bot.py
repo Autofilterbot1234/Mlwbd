@@ -2,11 +2,13 @@ import os
 import sys
 import re
 import requests
+import json
 from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # ======================================================================
 # --- আপনার ব্যক্তিগত ও অ্যাডমিন তথ্য (এনভায়রনমেন্ট থেকে লোড হবে) ---
@@ -15,7 +17,6 @@ MONGO_URI = os.environ.get("MONGO_URI")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
 ADMIN_CHANNEL_ID = os.environ.get("ADMIN_CHANNEL_ID")
-PUBLIC_UPDATE_CHANNEL_ID = os.environ.get("PUBLIC_UPDATE_CHANNEL_ID")
 BOT_USERNAME = os.environ.get("BOT_USERNAME")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
@@ -24,15 +25,19 @@ ADMIN_USER_IDS = [uid.strip() for uid in ADMIN_USER_IDS_STR.split(',')] if ADMIN
 MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK")
 UPDATE_CHANNEL_LINK = os.environ.get("UPDATE_CHANNEL_LINK")
 DEVELOPER_USER_LINK = os.environ.get("DEVELOPER_USER_LINK")
-APP_BASE_URL = os.environ.get("APP_BASE_URL")
+PUBLIC_CHANNEL_ID = os.environ.get("PUBLIC_CHANNEL_ID")
+WEBSITE_URL = os.environ.get("WEBSITE_URL")
 
 required_vars = {
     "MONGO_URI": MONGO_URI, "BOT_TOKEN": BOT_TOKEN, "TMDB_API_KEY": TMDB_API_KEY,
-    "ADMIN_CHANNEL_ID": ADMIN_CHANNEL_ID, "PUBLIC_UPDATE_CHANNEL_ID": PUBLIC_UPDATE_CHANNEL_ID,
-    "BOT_USERNAME": BOT_USERNAME, "ADMIN_USERNAME": ADMIN_USERNAME, "ADMIN_PASSWORD": ADMIN_PASSWORD,
-    "ADMIN_USER_IDS": ADMIN_USER_IDS_STR, "MAIN_CHANNEL_LINK": MAIN_CHANNEL_LINK,
-    "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK, "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
-    "APP_BASE_URL": APP_BASE_URL,
+    "ADMIN_CHANNEL_ID": ADMIN_CHANNEL_ID, "BOT_USERNAME": BOT_USERNAME,
+    "ADMIN_USERNAME": ADMIN_USERNAME, "ADMIN_PASSWORD": ADMIN_PASSWORD,
+    "ADMIN_USER_IDS": ADMIN_USER_IDS_STR,
+    "MAIN_CHANNEL_LINK": MAIN_CHANNEL_LINK,
+    "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK,
+    "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
+    "PUBLIC_CHANNEL_ID": PUBLIC_CHANNEL_ID,
+    "WEBSITE_URL": WEBSITE_URL,
 }
 missing_vars = [name for name, value in required_vars.items() if not value]
 if missing_vars:
@@ -69,10 +74,26 @@ except Exception as e:
 @app.context_processor
 def inject_global_vars():
     ad_codes = settings.find_one() or {}
+    
     def format_links_for_edit(links_list):
         if not links_list or not isinstance(links_list, list): return ""
         return ", ".join([f"{link.get('lang', 'Link')}: {link.get('url', '')}" for link in links_list])
-    return dict(ad_settings=ad_codes, bot_username=BOT_USERNAME, main_channel_link=MAIN_CHANNEL_LINK, format_links_for_edit=format_links_for_edit)
+
+    return dict(
+        ad_settings=ad_codes, 
+        bot_username=BOT_USERNAME, 
+        main_channel_link=MAIN_CHANNEL_LINK, 
+        format_links_for_edit=format_links_for_edit
+    )
+
+def delete_message_after_delay(chat_id, message_id):
+    try:
+        requests.post(f"{TELEGRAM_API_URL}/deleteMessage", json={'chat_id': chat_id, 'message_id': message_id})
+    except Exception as e:
+        print(f"Error in delete_message_after_delay: {e}")
+
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.start()
 
 def escape_markdown(text: str) -> str:
     if not isinstance(text, str): return ''
@@ -88,69 +109,77 @@ def parse_links_from_string(link_string: str) -> list:
             try:
                 lang, url = part.split(':', 1)
                 links.append({'lang': lang.strip().title(), 'url': url.strip()})
-            except ValueError: links.append({'lang': 'Link', 'url': part})
-        else: links.append({'lang': 'Link', 'url': part})
+            except ValueError:
+                links.append({'lang': 'Link', 'url': part})
+        else:
+            links.append({'lang': 'Link', 'url': part})
     return links
 
 # ======================================================================
-# --- স্বয়ংক্রিয় চ্যানেল পোস্ট ফাংশন (চূড়ান্ত সংস্করণ) ---
+# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য ---
 # ======================================================================
-def send_update_to_channel(movie_id):
-    channel_id = PUBLIC_UPDATE_CHANNEL_ID.strip() if PUBLIC_UPDATE_CHANNEL_ID else None
-    base_url = APP_BASE_URL.strip() if APP_BASE_URL else None
-    
-    if not channel_id or not base_url:
-        print(f"WARNING: Skipping channel post. PUBLIC_UPDATE_CHANNEL_ID is '{channel_id}' and APP_BASE_URL is '{base_url}'. Both are required.")
+def post_to_public_channel(content_id, post_type='content', season_num=None):
+    """
+    নতুন কন্টেন্ট বা সিজন প্যাক যোগ হলে পাবলিক চ্যানেলে পোস্ট পাঠায়।
+    """
+    if not PUBLIC_CHANNEL_ID or not WEBSITE_URL:
+        print("WARNING: PUBLIC_CHANNEL_ID or WEBSITE_URL is not set. Skipping public post.")
         return
 
     try:
-        movie = movies.find_one({"_id": ObjectId(movie_id)})
-        if not movie:
-            print(f"ERROR: [send_update_to_channel] Could not find movie with ID {movie_id} to post update.")
+        content = movies.find_one({"_id": ObjectId(content_id)})
+        if not content:
+            print(f"ERROR: Could not find content with ID {content_id} to post.")
             return
 
-        title = escape_markdown(movie.get("title", "N/A"))
-        year = movie.get("release_date", "").split('-')[0]
-        title_with_year = f"{title} ({year})" if year else title
+        title = content.get('title', 'No Title')
+        poster_url = content.get('poster')
+        escaped_title = escape_markdown(title)
         
-        caption_parts = [f"🎬 *{title_with_year}*"]
-        if badge := movie.get("poster_badge"): caption_parts.append(f"\n🏅 *Language:* {escape_markdown(badge)}")
-        if genres := movie.get("genres"): caption_parts.append(f"🎭 *Genre:* {escape_markdown(', '.join(genres))}")
+        caption = ""
+        # পোস্টের ধরন অনুযায়ী ক্যাপশন তৈরি
+        if post_type == 'season_pack' and season_num:
+            pack = next((p for p in content.get('season_packs', []) if p['season'] == season_num), None)
+            pack_langs = set()
+            if pack:
+                for link in pack.get('watch_links', []) + pack.get('download_links', []):
+                    pack_langs.add(link.get('lang', 'N/A'))
+            languages = ", ".join(sorted(list(pack_langs))) or "Not Specified"
+            escaped_langs = escape_markdown(languages)
 
-        caption = "\n".join(caption_parts)
-        website_url = f"{base_url.strip('/')}/movie/{str(movie['_id'])}"
-        
-        reply_markup = {
-            "inline_keyboard": [
-                [{"text": "📥 Download / Watch Now 🎬", "url": website_url}],
-                [{"text": "Join Main Channel", "url": MAIN_CHANNEL_LINK}, {"text": "Join Update Channel", "url": UPDATE_CHANNEL_LINK}]
-            ]
-        }
+            caption = (
+                f"🎬 *{escaped_title}*\n\n"
+                f"🔥 *Season {season_num} Pack Added*\n\n"
+                f"🗣️ *ভাষা:* {escaped_langs}"
+            )
+        else: # নতুন মুভি/সিরিজের জন্য ডিফল্ট ক্যাপশন
+            languages = ", ".join(content.get('languages', [])) or "Not Specified"
+            escaped_langs = escape_markdown(languages)
+            caption = (
+                f"🎬 *{escaped_title}*\n\n"
+                f"🗣️ *ভাষা:* {escaped_langs}"
+            )
 
-        poster_url = movie.get('poster')
+        with app.app_context():
+            website_link = f"{WEBSITE_URL.rstrip('/')}{url_for('movie_detail', movie_id=str(content_id))}"
         
-        if poster_url and poster_url.startswith('http'):
-            payload = {'chat_id': channel_id, 'photo': poster_url, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': reply_markup}
-            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload, timeout=20)
-            api_method = "sendPhoto"
+        keyboard = { "inline_keyboard": [[{"text": "🌐 ওয়েবসাইটে দেখুন (Watch on Website)", "url": website_link}]] }
+
+        if poster_url:
+            payload = {'chat_id': PUBLIC_CHANNEL_ID, 'photo': poster_url, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
+            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
         else:
-            print(f"WARNING: No valid poster found for movie '{movie.get('title')}'. Sending text message instead.")
-            text_message = caption + f"\n\n[Visit Website]({website_url})"
-            payload = {'chat_id': channel_id, 'text': text_message, 'parse_mode': 'MarkdownV2', 'reply_markup': reply_markup, 'disable_web_page_preview': True}
-            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload, timeout=20)
-            api_method = "sendMessage"
+            payload = {'chat_id': PUBLIC_CHANNEL_ID, 'text': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
+            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
 
-        response_data = response.json()
-        if response_data.get('ok'):
-            print(f"SUCCESS: Posted update for '{movie.get('title')}' to channel {channel_id} using {api_method}.")
+        if response.status_code == 200:
+            print(f"SUCCESS: Successfully posted '{title}' (Type: {post_type}) to public channel.")
         else:
-            error_description = response_data.get('description', 'Unknown error')
-            print(f"ERROR: Failed to post update to channel via {api_method}. Telegram API Error: {error_description}")
+            print(f"ERROR: Failed to post to public channel. Status: {response.status_code}, Response: {response.text}")
 
-    except requests.exceptions.RequestException as e:
-        print(f"FATAL NETWORK ERROR in send_update_to_channel: {e}")
     except Exception as e:
-        print(f"FATAL UNKNOWN ERROR in send_update_to_channel: {e}")
+        print(f"FATAL ERROR in post_to_public_channel: {e}")
+
 
 # ======================================================================
 # --- HTML টেমপ্লেট ---
@@ -732,34 +761,42 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 # --- Helper Functions ---
 # ======================================================================
 def get_tmdb_details_from_api(title, content_type, year=None):
-    if not TMDB_API_KEY: 
+    if not TMDB_API_KEY:
         print("ERROR: TMDB_API_KEY is not set.")
         return None
+    
     search_type = "tv" if content_type in ["series", "series_pack"] else "movie"
     
     def search_tmdb(query_title, query_year):
+        print(f"INFO: Searching TMDb for: '{query_title}' (Type: {search_type}, Year: {query_year})")
         try:
             search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}"
-            if query_year: search_url += f"&{'first_air_date_year' if search_type == 'tv' else 'year'}={query_year}"
-            print(f"INFO: Searching TMDb: {search_url}")
-            response = requests.get(search_url, timeout=10)
-            response.raise_for_status()
-            results = response.json().get("results")
-            if not results:
-                print(f"WARNING: No TMDb results for '{query_title}' year '{query_year}'.")
-                return None
+            if query_year and search_type == "movie":
+                search_url += f"&year={query_year}"
+            elif query_year and search_type == "tv":
+                search_url += f"&first_air_date_year={query_year}"
+
+            search_res = requests.get(search_url, timeout=10)
+            search_res.raise_for_status()
+            results = search_res.json().get("results")
+            
+            if not results: return None
             
             tmdb_id = results[0].get("id")
             detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=videos"
-            detail_res = requests.get(detail_url, timeout=10).json()
+            detail_res = requests.get(detail_url, timeout=10)
+            detail_res.raise_for_status()
+            res_json = detail_res.json()
+
+            trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
             
-            poster_path = detail_res.get('poster_path')
-            poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
-            
-            trailer_key = next((v['key'] for v in detail_res.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
-            
-            details = { "tmdb_id": tmdb_id, "title": detail_res.get("title") or detail_res.get("name"), "poster": poster_url, "overview": detail_res.get("overview"), "release_date": detail_res.get("release_date") or detail_res.get("first_air_date"), "genres": [g['name'] for g in detail_res.get("genres", [])], "vote_average": detail_res.get("vote_average"), "trailer_key": trailer_key }
-            print(f"SUCCESS: Found TMDb details for '{details['title']}'. Poster: {'Yes' if poster_url else 'No'}")
+            details = {
+                "tmdb_id": tmdb_id, "title": res_json.get("title") or res_json.get("name"), 
+                "poster": f"https://image.tmdb.org/t/p/w500{res_json.get('poster_path')}" if res_json.get('poster_path') else None, 
+                "overview": res_json.get("overview"), "release_date": res_json.get("release_date") or res_json.get("first_air_date"), 
+                "genres": [g['name'] for g in res_json.get("genres", [])], "vote_average": res_json.get("vote_average"), "trailer_key": trailer_key
+            }
+            print(f"SUCCESS: Found TMDb details for '{query_title}' (ID: {tmdb_id}).")
             return details
         except requests.RequestException as e:
             print(f"ERROR: TMDb API request failed for '{query_title}'. Reason: {e}")
@@ -767,21 +804,27 @@ def get_tmdb_details_from_api(title, content_type, year=None):
 
     tmdb_data = search_tmdb(title, year)
     if not tmdb_data and year:
-        print(f"INFO: Retrying TMDb search for '{title}' without year.")
+        print(f"WARNING: TMDb search failed for '{title}' with year '{year}'. Retrying without year.")
         tmdb_data = search_tmdb(title, None)
+        
+    if not tmdb_data:
+        print(f"FINAL WARNING: TMDb search found no results for '{title}' after all attempts.")
     return tmdb_data
 
-def process_movie_list(movie_list): return [{**item, '_id': str(item['_id'])} for item in movie_list]
+def process_movie_list(movie_list):
+    return [{**item, '_id': str(item['_id'])} for item in movie_list]
 
 # ======================================================================
 # --- Main Flask Routes ---
 # ======================================================================
+
 @app.route('/')
 def home():
     query = request.args.get('q')
     if query:
         movies_list = list(movies.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
         return render_template_string(index_html, movies=process_movie_list(movies_list), query=f'Results for "{query}"', is_full_page_list=True)
+    all_badges = sorted([badge for badge in movies.distinct("poster_badge") if badge and badge.strip()])
     limit = 12
     context = {
         "trending_movies": process_movie_list(list(movies.find({"is_trending": True, "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
@@ -790,7 +833,7 @@ def home():
         "coming_soon_movies": process_movie_list(list(movies.find({"is_coming_soon": True}).sort('_id', -1).limit(limit))),
         "recently_added": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(6))),
         "recently_added_full": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "is_full_page_list": False, "query": "", "all_badges": sorted([b for b in movies.distinct("poster_badge") if b and b.strip()])
+        "is_full_page_list": False, "query": "", "all_badges": all_badges
     }
     return render_template_string(index_html, **context)
 
@@ -801,71 +844,81 @@ def movie_detail(movie_id):
         movies.update_one({"_id": obj_id}, {"$inc": {"view_count": 1}})
         movie = movies.find_one({"_id": obj_id})
         if not movie: return "Content not found", 404
-        related_movies = list(movies.find({"genres": {"$in": movie.get("genres", [])}, "_id": {"$ne": obj_id}}).limit(12)) if movie.get("genres") else []
+        related_movies = []
+        if movie.get("genres"):
+            related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": obj_id}}).limit(12))
         return render_template_string(detail_html, movie=movie, trailer_key=movie.get("trailer_key"), related_movies=process_movie_list(related_movies))
-    except Exception as e: print(f"Error in movie_detail: {e}"); return "Content not found or invalid ID", 404
+    except Exception as e:
+        print(f"Error in movie_detail route: {e}")
+        return "Content not found or invalid ID", 404
 
-def render_full_list(content_list, title): return render_template_string(index_html, movies=process_movie_list(content_list), query=title, is_full_page_list=True)
+def render_full_list(content_list, title):
+    return render_template_string(index_html, movies=process_movie_list(content_list), query=title, is_full_page_list=True)
+
 @app.route('/badge/<badge_name>')
 def movies_by_badge(badge_name): return render_full_list(list(movies.find({"poster_badge": badge_name}).sort('_id', -1)), f'Tag: {badge_name}')
+
 @app.route('/genres')
 def genres_page(): return render_template_string(genres_html, genres=sorted([g for g in movies.distinct("genres") if g]), title="Browse by Genre")
+
 @app.route('/genre/<genre_name>')
 def movies_by_genre(genre_name): return render_full_list(list(movies.find({"genres": genre_name}).sort('_id', -1)), f'Genre: {genre_name}')
+
 @app.route('/trending_movies')
 def trending_movies(): return render_full_list(list(movies.find({"is_trending": True, "is_coming_soon": {"$ne": True}}).sort('_id', -1)), "Trending Now")
+
 @app.route('/movies_only')
 def movies_only(): return render_full_list(list(movies.find({"type": "movie", "is_coming_soon": {"$ne": True}}).sort('_id', -1)), "All Movies")
+
 @app.route('/webseries')
 def webseries(): return render_full_list(list(movies.find({"type": "series", "is_coming_soon": {"$ne": True}}).sort('_id', -1)), "All Web Series")
+
 @app.route('/coming_soon')
 def coming_soon(): return render_full_list(list(movies.find({"is_coming_soon": True}).sort('_id', -1)), "Coming Soon")
+
 @app.route('/recently_added')
 def recently_added_all(): return render_full_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1)), "Recently Added")
 
 # ======================================================================
-# --- Admin and Other Routes (Threading সহ) ---
+# --- Admin and Other Routes ---
 # ======================================================================
 @app.route('/admin', methods=["GET", "POST"])
 @requires_auth
 def admin():
     if request.method == "POST":
         content_type = request.form.get("content_type", "movie")
-        manual_title = request.form.get("title")
-        doc_data = {"title": manual_title, "type": content_type, "created_at": datetime.now(timezone.utc)}
-        
-        tmdb_data = get_tmdb_details_from_api(manual_title, content_type) or {}
-        doc_data.update(tmdb_data)
-
+        tmdb_data = get_tmdb_details_from_api(request.form.get("title"), content_type) or {}
+        doc_data = {
+            "title": request.form.get("title"), "type": content_type, **tmdb_data, 
+            "is_trending": False, "is_coming_soon": False, 
+            "watch_links": [], "download_links": [], "files": [], "episodes": [], "season_packs": [], "languages": []
+        }
         if content_type == "movie":
-            doc_data.update({
-                'watch_links': parse_links_from_string(request.form.get('watch_links_str')),
-                'download_links': parse_links_from_string(request.form.get('download_links_str')),
-                'files': [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
-            })
-        else:
-            doc_data['episodes'] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m and m.isdigit() else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
+            doc_data['watch_links'] = parse_links_from_string(request.form.get('watch_links_str'))
+            doc_data['download_links'] = parse_links_from_string(request.form.get('download_links_str'))
+            doc_data['files'] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
+        else: # Series
+            doc_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
         
         result = movies.insert_one(doc_data)
-        
         if result.inserted_id:
-            print(f"INFO: New content '{manual_title}' added. Starting background thread for channel post.")
-            post_thread = Thread(target=send_update_to_channel, args=(result.inserted_id,))
-            post_thread.daemon = True
-            post_thread.start()
-        
+            post_to_public_channel(result.inserted_id, post_type='content')
+
         return redirect(url_for('admin'))
 
     search_query = request.args.get('search', '').strip()
-    query_filter = {"title": {"$regex": search_query, "$options": "i"}} if search_query else {}
+    query_filter = {}
+    if search_query: query_filter = {"title": {"$regex": search_query, "$options": "i"}}
+    ad_settings = settings.find_one() or {}
     content_list = process_movie_list(list(movies.find(query_filter).sort('_id', -1)))
     feedback_list = process_movie_list(list(feedback.find().sort('timestamp', -1)))
     return render_template_string(admin_html, content_list=content_list, feedback_list=feedback_list, search_query=search_query)
 
+
 @app.route('/admin/save_ads', methods=['POST'])
 @requires_auth
 def save_ads():
-    ad_codes = {"popunder_code": request.form.get("popunder_code", ""), "social_bar_code": request.form.get("social_bar_code", ""), "banner_ad_code": request.form.get("banner_ad_code", ""), "native_banner_code": request.form.get("native_banner_code", "")}
+    ad_codes = { "popunder_code": request.form.get("popunder_code", ""), "social_bar_code": request.form.get("social_bar_code", ""), "banner_ad_code": request.form.get("banner_ad_code", ""), "native_banner_code": request.form.get("native_banner_code", "") }
     settings.update_one({}, {"$set": ad_codes}, upsert=True)
     return redirect(url_for('admin'))
 
@@ -884,8 +937,7 @@ def edit_movie(movie_id):
             "poster": request.form.get("poster", "").strip(), "overview": request.form.get("overview", "").strip(),
             "genres": [g.strip() for g in request.form.get("genres", "").split(',') if g.strip()],
             "languages": [lang.strip() for lang in request.form.get("languages", "").split(',') if lang.strip()],
-            "poster_badge": request.form.get("poster_badge", "").strip() or None,
-            "updated_at": datetime.now(timezone.utc)
+            "poster_badge": request.form.get("poster_badge", "").strip() or None
         }
         
         if content_type == "movie":
@@ -893,48 +945,66 @@ def edit_movie(movie_id):
             update_data["download_links"] = parse_links_from_string(request.form.get('download_links_str'))
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
-        else:
-            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m and m.isdigit() else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
-            update_data["season_packs"] = [{"season": int(s), "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(mid) if mid and mid.isdigit() else None} for s, wl, dl, mid in zip(request.form.getlist('pack_season[]'), request.form.getlist('pack_watch_links_str[]'), request.form.getlist('pack_download_links_str[]'), request.form.getlist('pack_message_id[]')) if s]
+        else: # Series
+            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
+            update_data["season_packs"] = [{
+                "season": int(s),
+                "watch_links": parse_links_from_string(wl),
+                "download_links": parse_links_from_string(dl),
+                "message_id": int(mid) if mid and mid.isdigit() else None
+            } for s, wl, dl, mid in zip(
+                request.form.getlist('pack_season[]'), 
+                request.form.getlist('pack_watch_links_str[]'), 
+                request.form.getlist('pack_download_links_str[]'), 
+                request.form.getlist('pack_message_id[]')
+            ) if s]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"watch_links": "", "download_links": "", "files": ""}})
-        
-        print(f"INFO: Content '{update_data['title']}' updated. Starting background thread for channel post.")
-        post_thread = Thread(target=send_update_to_channel, args=(obj_id,))
-        post_thread.daemon = True
-        post_thread.start()
         
         return redirect(url_for('admin'))
 
     return render_template_string(edit_html, movie=movie_obj)
 
+
 @app.route('/delete_movie/<movie_id>')
 @requires_auth
 def delete_movie(movie_id):
-    movies.delete_one({"_id": ObjectId(movie_id)}); return redirect(url_for('admin'))
+    movies.delete_one({"_id": ObjectId(movie_id)})
+    return redirect(url_for('admin'))
+
 @app.route('/admin/delete_all_movies')
 @requires_auth
 def delete_all_movies():
-    movies.delete_many({}); return redirect(url_for('admin'))
+    movies.delete_many({})
+    return redirect(url_for('admin'))
+
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
     if request.method == 'POST':
-        feedback.insert_one({"type": request.form.get("type"), "content_title": request.form.get("content_title"), "message": request.form.get("message"), "email": request.form.get("email", "").strip(), "reported_content_id": request.form.get("reported_content_id"), "timestamp": datetime.now(timezone.utc)})
+        feedback_data = { "type": request.form.get("type"), "content_title": request.form.get("content_title"), "message": request.form.get("message"), "email": request.form.get("email", "").strip(), "reported_content_id": request.form.get("reported_content_id"), "timestamp": datetime.utcnow() }
+        feedback.insert_one(feedback_data)
         return render_template_string(contact_html, message_sent=True)
-    prefill_type = 'Problem Report' if request.args.get('report_id') else 'Movie Request'
-    return render_template_string(contact_html, message_sent=False, prefill_title=request.args.get('title', ''), prefill_id=request.args.get('report_id', ''), prefill_type=prefill_type)
+    prefill_title, prefill_id = request.args.get('title', ''), request.args.get('report_id', '')
+    prefill_type = 'Problem Report' if prefill_id else 'Movie Request'
+    return render_template_string(contact_html, message_sent=False, prefill_title=prefill_title, prefill_id=prefill_id, prefill_type=prefill_type)
+
 @app.route('/delete_feedback/<feedback_id>')
 @requires_auth
 def delete_feedback(feedback_id):
-    feedback.delete_one({"_id": ObjectId(feedback_id)}); return redirect(url_for('admin'))
+    feedback.delete_one({"_id": ObjectId(feedback_id)})
+    return redirect(url_for('admin'))
+
 
 # ======================================================================
-# --- Webhook Route (চূড়ান্ত সংস্করণ) ---
+# --- Webhook Route (FINAL VERSION) ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
 
-    if 'message' in data:
+    if 'channel_post' in data:
+        pass
+
+    elif 'message' in data:
         message = data['message']
         chat_id = message['chat']['id']
         text = message.get('text', '').strip()
@@ -944,99 +1014,214 @@ def telegram_webhook():
             if payload_str != '/start':
                 try:
                     parts = payload_str.split('_')
-                    movie = movies.find_one({"_id": ObjectId(parts[0])})
+                    movie_id_str = parts[0]
+                    movie = movies.find_one({"_id": ObjectId(movie_id_str)})
                     if not movie: raise ValueError("Movie not found")
-                    if len(parts) == 2 and parts[1].startswith('S'):
-                        pack = next((p for p in movie.get('season_packs', []) if p['season'] == int(parts[1][1:])), None)
-                        if pack and pack.get('message_id'): requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': pack['message_id']})
-                    elif len(parts) == 2:
-                        file_info = next((f for f in movie.get('files', []) if f['quality'] == parts[1]), None)
-                        if file_info: requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': file_info['message_id']})
-                    elif len(parts) == 3:
-                        ep_info = next((e for e in movie.get('episodes', []) if e['season'] == int(parts[1]) and e['episode_number'] == int(parts[2])), None)
-                        if ep_info and ep_info.get('message_id'): requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': ep_info['message_id']})
-                except Exception as e: print(f"Error processing start payload: {e}")
+
+                    if len(parts) == 2 and parts[1].startswith('S'): # Season pack
+                        season_num = int(parts[1][1:])
+                        pack = next((p for p in movie.get('season_packs', []) if p['season'] == season_num), None)
+                        if pack and pack.get('message_id'):
+                            requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': pack['message_id']})
+                        else:
+                            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "দুঃখিত, এই সিজন প্যাকটি টেলিগ্রাম থেকে পাওয়া যায়নি। ওয়েবসাইটে সরাসরি লিঙ্ক চেক করুন।"})
+                    
+                    elif len(parts) == 2: # Movie file
+                        quality = parts[1]
+                        file_info = next((f for f in movie.get('files', []) if f['quality'] == quality), None)
+                        if file_info:
+                            requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': file_info['message_id']})
+                    
+                    elif len(parts) == 3: # Series episode
+                        season, episode = int(parts[1]), int(parts[2])
+                        ep_info = next((e for e in movie.get('episodes', []) if e['season'] == season and e['episode_number'] == episode), None)
+                        if ep_info and ep_info.get('message_id'):
+                            requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': ep_info['message_id']})
+
+                except Exception as e:
+                    print(f"Error processing start payload: {e}")
             else:
-                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"👋 স্বাগতম!\n\nআমি {BOT_USERNAME}, আপনার মুভি এবং সিরিজ খোঁজার সহযোগী।\n\n🌐 আমাদের ওয়েবসাইটে যান এবং হাজারো মুভি ও সিরিজ থেকে আপনার পছন্দেরটি বেছে নিন।", 'disable_web_page_preview': 'true'})
+                 welcome_text = (
+                    f"👋 স্বাগতম!\n\n"
+                    f"আমি {BOT_USERNAME}, আপনার মুভি এবং সিরিজ খোঁজার সহযোগী।\n\n"
+                    f"🌐 আমাদের ওয়েবসাইটে যান এবং হাজারো মুভি ও সিরিজ থেকে আপনার পছন্দেরটি বেছে নিন।"
+                )
+                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_text, 'disable_web_page_preview': 'true'})
+            
             return jsonify(status='ok')
 
-        if str(chat_id) not in ADMIN_USER_IDS: return jsonify(status='ok')
+        if str(chat_id) not in ADMIN_USER_IDS:
+            return jsonify(status='ok')
         
-        if text == '/add': requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"👇 মুভি যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/add মুভির নাম (সাল) [ভাষা] | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\n*একাধিক লিঙ্ক কমা (,) দিয়ে দিন। যেমন: `Hindi: url, Bangla: url`*", 'parse_mode': 'Markdown'})
-        elif text.startswith('/add '):
+        if text.startswith('/add '):
             try:
                 parts = text.split('/add ', 1)[1].split('|')
-                if len(parts) != 3: raise ValueError("Incorrect format")
+                if len(parts) != 3: raise ValueError()
                 title_part, watch_links_str, download_links_str = [p.strip() for p in parts]
-                lang_match = re.search(r'\[(.*?)\]', title_part); badge = lang_match.group(1).strip() if lang_match else None
-                title_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
-                year_match = re.search(r'\(?(\d{4})\)?$', title_cleaned); year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_cleaned).strip()) if year_match else (None, title_cleaned)
-                tmdb_data = get_tmdb_details_from_api(title, "movie", year)
-                if not tmdb_data: requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title}' নামে কোনো মুভি পাওয়া যায়নি।"}); return jsonify(status='ok')
-                movie_doc = {**tmdb_data, "type": "movie", "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
-                movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
-                updated_movie = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})
-                if updated_movie:
-                    post_thread = Thread(target=send_update_to_channel, args=(updated_movie["_id"],))
-                    post_thread.daemon = True
-                    post_thread.start()
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` যোগ করে চ্যানেলে পোস্ট করা হয়েছে।", 'parse_mode': 'Markdown'})
-            except Exception as e: print(f"Error in /add: {e}"); requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/add` লিখে পাঠান।"})
+                
+                lang_match = re.search(r'\[(.*?)\]', title_part)
+                badge = lang_match.group(1).strip() if lang_match else None
+                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
 
-        elif text == '/addseries': requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "👇 শুধুমাত্র সিরিজের পাতা তৈরি করতে এই ফরম্যাট ব্যবহার করুন:\n\n`/addseries সিরিজের নাম (সাল) [ভাষা]`", 'parse_mode': 'Markdown'})
+                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
+                year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ মুভি `{title}` এর তথ্য খোঁজা হচ্ছে...", 'parse_mode': 'Markdown'})
+                tmdb_data = get_tmdb_details_from_api(title, "movie", year)
+                
+                if not tmdb_data:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো মুভি পাওয়া যায়নি।"})
+                    return jsonify(status='ok')
+
+                movie_doc = {**tmdb_data, "type": "movie", "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.utcnow()}
+                
+                result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
+                
+                if result.upserted_id:
+                    post_to_public_channel(result.upserted_id, post_type='content')
+                
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` মুভিটি ওয়েবসাইটে যোগ করা হয়েছে।", 'parse_mode': 'Markdown'})
+            except Exception as e:
+                print(f"Error in /add command: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/add` লিখে পাঠান।"})
+        
+        elif text == '/add':
+            reply_text = f"👇 মুভি যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/add মুভির নাম (সাল) [ভাষা] | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\n*একাধিক লিঙ্ক কমা (,) দিয়ে দিন। যেমন: `Hindi: url, Bangla: url`*"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+
         elif text.startswith('/addseries '):
             try:
                 title_part = text.split('/addseries ', 1)[1].strip()
-                lang_match = re.search(r'\[(.*?)\]', title_part); badge = lang_match.group(1).strip() if lang_match else None
-                title_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
-                year_match = re.search(r'\(?(\d{4})\)?$', title_cleaned); year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_cleaned).strip()) if year_match else (None, title_cleaned)
-                tmdb_data = get_tmdb_details_from_api(title, "series", year)
-                if not tmdb_data: requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title}' নামে কোনো ওয়েব সিরিজ পাওয়া যায়নি।"}); return jsonify(status='ok')
-                series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)}
-                movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
-                updated_series = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})
-                if updated_series:
-                    post_thread = Thread(target=send_update_to_channel, args=(updated_series["_id"],))
-                    post_thread.daemon = True
-                    post_thread.start()
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` সিরিজটি যোগ করে চ্যানেলে পোস্ট করা হয়েছে।\n\n**এখন `/addepisode` বা `/addseasonpack` কমান্ড দিয়ে এপিসোড/সিজন যোগ করুন।**", 'parse_mode': 'Markdown'})
-            except Exception as e: print(f"Error in /addseries: {e}"); requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addseries` লিখে পাঠান।"})
+                lang_match = re.search(r'\[(.*?)\]', title_part)
+                badge = lang_match.group(1).strip() if lang_match else None
+                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
 
-        elif text == '/addepisode': requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "👇 সিরিজের এপিসোড যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/addepisode সিরিজের নাম (সাল) [ভাষা] | S01E01 | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`", 'parse_mode': 'Markdown'})
+                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
+                year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ সিরিজ `{title}` এর তথ্য খোঁজা হচ্ছে...", 'parse_mode': 'Markdown'})
+                tmdb_data = get_tmdb_details_from_api(title, "series", year)
+
+                if not tmdb_data:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো ওয়েব সিরিজ পাওয়া যায়নি।"})
+                    return jsonify(status='ok')
+
+                series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.utcnow()}
+                
+                result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
+
+                if result.upserted_id:
+                    post_to_public_channel(result.upserted_id, post_type='content')
+
+                reply_text = f"✅ সফলভাবে `{tmdb_data['title']}` সিরিজটি যোগ করা হয়েছে।\n\n**এখন `/addepisode` বা `/addseasonpack` কমান্ড দিয়ে এপিসোড/সিজন যোগ করুন।**"
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+            except:
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addseries` লিখে পাঠান।"})
+
+        elif text == '/addseries':
+            reply_text = f"👇 শুধুমাত্র সিরিজের পাতা তৈরি করতে এই ফরম্যাট ব্যবহার করুন:\n\n`/addseries সিরিজের নাম (সাল) [ভাষা]`"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+            
         elif text.startswith('/addepisode '):
             try:
-                parts = text.split('/addepisode ', 1)[1].split('|');
-                if len(parts) != 4: raise ValueError("Incorrect format")
+                parts = text.split('/addepisode ', 1)[1].split('|')
+                if len(parts) != 4: raise ValueError()
                 title_part, se_part, watch_links_str, download_links_str = [p.strip() for p in parts]
-                title_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip(); year_match = re.search(r'\(?(\d{4})\)?$', title_cleaned); year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_cleaned).strip()) if year_match else (None, title_cleaned)
-                se_match = re.match(r'S(\d+)E(\d+)', se_part, re.IGNORECASE);
-                if not se_match: raise ValueError("Invalid S/E format")
+                
+                lang_match = re.search(r'\[(.*?)\]', title_part)
+                badge = lang_match.group(1).strip() if lang_match else None
+                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+
+                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
+                year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+                
+                se_match = re.match(r'S(\d+)E(\d+)', se_part, re.IGNORECASE)
+                if not se_match: raise ValueError()
                 season_num, episode_num = int(se_match.group(1)), int(se_match.group(2))
-                series = movies.find_one({"title": {"$regex": f"^{re.escape(title)}$", "$options": "i"}, "type": "series"})
-                if not series: requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ সিরিজ `{title}` খুঁজে পাওয়া যায়নি। প্রথমে `/addseries` দিয়ে সিরিজটি যোগ করুন।", 'parse_mode': 'Markdown'}); return jsonify(status='ok')
+
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ সিরিজ `{title}` এর তথ্য খোঁজা হচ্ছে...", 'parse_mode': 'Markdown'})
+                tmdb_data = get_tmdb_details_from_api(title, "series", year)
+
+                if not tmdb_data:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ দুঃখিত, '{title_part}' নামে কোনো ওয়েব সিরিজ পাওয়া যায়নি।"})
+                    return jsonify(status='ok')
+
+                existing_series = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})
+                if not existing_series:
+                    series_doc = {**tmdb_data, "type": "series", "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.utcnow()}
+                    result = movies.insert_one(series_doc)
+                    series_id = result.inserted_id
+                    post_to_public_channel(series_id, post_type='content')
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"ℹ️ নতুন সিরিজ `{tmdb_data['title']}` তৈরি করা হয়েছে। এখন এপিসোড যোগ করা হচ্ছে...", 'parse_mode': 'Markdown'})
+                else:
+                    series_id = existing_series['_id']
+                    if badge: movies.update_one({"_id": series_id}, {"$set": {"poster_badge": badge}})
+
                 new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
-                movies.update_one({"_id": series['_id']}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
-                movies.update_one({"_id": series['_id']}, {"$push": {"episodes": new_episode}})
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{series['title']}` সিরিজের S{season_num:02d}E{episode_num:02d} যোগ করা হয়েছে।", 'parse_mode': 'Markdown'})
-            except Exception as e: print(f"Error in /addepisode: {e}"); requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addepisode` লিখে পাঠান।"})
-        
-        elif text == '/addseasonpack': requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "👇 সিজন প্যাক যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/addseasonpack সিরিজের নাম (সাল) [ভাষা] | S01 | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`", 'parse_mode': 'Markdown'})
+                movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
+                movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
+                
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{tmdb_data['title']}` সিরিজের S{season_num:02d}E{episode_num:02d} যোগ করা হয়েছে।", 'parse_mode': 'Markdown'})
+            except Exception as e:
+                print(f"Error in /addepisode command: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addepisode` লিখে পাঠান।"})
+
+        elif text == '/addepisode':
+            reply_text = f"👇 সিরিজের এপিসোড যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n`/addepisode সিরিজের নাম (সাল) [ভাষা] | S01E01 | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\n*(ভাষা ঐচ্ছিক, একাধিক লিঙ্ক কমা দিয়ে দিন।)*"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+
         elif text.startswith('/addseasonpack '):
             try:
-                parts = text.split('/addseasonpack ', 1)[1].split('|');
-                if len(parts) != 4: raise ValueError("Incorrect format")
+                parts = text.split('/addseasonpack ', 1)[1].split('|')
+                if len(parts) != 4: 
+                    raise ValueError("Incorrect format. Expected 4 parts separated by '|'.")
+                
                 title_part, season_part, watch_links_str, download_links_str = [p.strip() for p in parts]
-                title_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip(); year_match = re.search(r'\(?(\d{4})\)?$', title_cleaned); year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_cleaned).strip()) if year_match else (None, title_cleaned)
-                se_match = re.match(r'S(\d+)', season_part, re.IGNORECASE);
-                if not se_match: raise ValueError("Invalid season format")
+
+                lang_match = re.search(r'\[(.*?)\]', title_part)
+                badge = lang_match.group(1).strip().title() if lang_match else None
+                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+
+                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
+                year, title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+
+                se_match = re.match(r'S(\d+)', season_part, re.IGNORECASE)
+                if not se_match: raise ValueError("Invalid season format. Use S01, S02, etc.")
                 season_num = int(se_match.group(1))
+
                 series = movies.find_one({"title": {"$regex": f"^{re.escape(title)}$", "$options": "i"}, "type": "series"})
-                if not series: requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ সিরিজ `{title}` খুঁজে পাওয়া যায়নি। প্রথমে `/addseries` দিয়ে সিরিজটি যোগ করুন।", 'parse_mode': 'Markdown'}); return jsonify(status='ok')
-                new_pack = {"season": season_num, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
+                if not series:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ সিরিজ `{title}` খুঁজে পাওয়া যায়নি। প্রথমে `/addseries` দিয়ে সিরিজটি যোগ করুন।", 'parse_mode': 'Markdown'})
+                    return jsonify(status='ok')
+
+                new_pack = {
+                    "season": season_num,
+                    "watch_links": parse_links_from_string(watch_links_str),
+                    "download_links": parse_links_from_string(download_links_str),
+                    "message_id": None
+                }
+                
                 movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
                 movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{series['title']}` সিরিজের সিজন {season_num} প্যাক (লিঙ্কসহ) যোগ করা হয়েছে।", 'parse_mode': 'Markdown'})
-            except Exception as e: print(f"Error in /addseasonpack: {e}"); requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addseasonpack` লিখে পাঠান।"})
+                
+                if badge and badge not in series.get('languages', []):
+                    movies.update_one({"_id": series['_id']}, {"$addToSet": {"languages": badge}})
+                
+                post_to_public_channel(series['_id'], post_type='season_pack', season_num=season_num)
+
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ সফলভাবে `{series['title']}` সিরিজের সিজন {season_num} প্যাক যোগ করা হয়েছে এবং চ্যানেলে পোস্ট করা হয়েছে।", 'parse_mode': 'Markdown'})
+
+            except Exception as e:
+                print(f"Error in /addseasonpack command: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ ভুল ফরম্যাট! সাহায্যের জন্য শুধু `/addseasonpack` লিখে পাঠান।"})
+
+        elif text == '/addseasonpack':
+            reply_text = (
+                f"👇 সিজন প্যাক যোগ করতে নিচের ফরম্যাটটি ব্যবহার করুন:\n\n"
+                f"`/addseasonpack সিরিজের নাম (সাল) [ভাষা] | S01 | ওয়াচ লিঙ্ক | ডাউনলোড লিঙ্ক`\n\n"
+                f"*(ভাষা ঐচ্ছিক, একাধিক লিঙ্ক কমা দিয়ে দিন)*"
+            )
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
     return jsonify(status='ok')
 
