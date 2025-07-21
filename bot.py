@@ -96,14 +96,7 @@ def parse_links_from_string(link_string: str) -> list:
     links = []
     parts = [p.strip() for p in link_string.split(',') if p.strip()]
     for part in parts:
-        if 'msgid:' in part.lower(): # Special handling for message ID
-            try:
-                msg_id = int(part.split(':', 1)[1].strip())
-                links.append({'lang': 'Telegram', 'message_id': msg_id}) # Storing as message_id for internal use
-            except ValueError:
-                print(f"WARNING: Invalid Message ID format in link string: {part}")
-                links.append({'lang': 'Link', 'url': part}) # Fallback to URL if MsgID is invalid
-        elif ':' in part:
+        if ':' in part:
             try:
                 lang, url = part.split(':', 1)
                 links.append({'lang': lang.strip().title(), 'url': url.strip()})
@@ -112,83 +105,6 @@ def parse_links_from_string(link_string: str) -> list:
         else:
             links.append({'lang': 'Link', 'url': part})
     return links
-
-# Helper function to parse complex series episode/pack strings
-def parse_series_links_from_string(series_link_str: str, is_pack=False) -> list:
-    """
-    Parses a string like "S1:WatchUrl,DlUrl;S2:MsgId:12345" for season packs
-    or "S1E1:WatchUrl,DlUrl;S1E2(Title):MsgId:67890" for episodes.
-    """
-    if not series_link_str or not series_link_str.strip():
-        return []
-
-    parsed_items = []
-    items = [item.strip() for item in series_link_str.split(';') if item.strip()]
-
-    for item_str in items:
-        try:
-            # Separate the S/E part and the links part
-            se_part_match = re.match(r'(S\d+(?:E\d+)?(?:\s*\(.*?\))?)\s*:\s*(.*)', item_str, re.IGNORECASE)
-            if not se_part_match:
-                print(f"WARNING: Invalid S/E part format: {item_str}")
-                continue
-            
-            se_identifier = se_part_match.group(1).strip()
-            links_raw = se_part_match.group(2).strip()
-
-            item_data = {}
-            if is_pack: # Season Pack
-                pack_match = re.match(r'S(\d+)', se_identifier, re.IGNORECASE)
-                if not pack_match:
-                    print(f"WARNING: Invalid season pack identifier: {se_identifier}")
-                    continue
-                item_data['season'] = int(pack_match.group(1))
-            else: # Episode
-                ep_match = re.match(r'S(\d+)E(\d+)(?:\s*\((.*?)\))?', se_identifier, re.IGNORECASE)
-                if not ep_match:
-                    print(f"WARNING: Invalid episode identifier: {se_identifier}")
-                    continue
-                item_data['season'] = int(ep_match.group(1))
-                item_data['episode_number'] = int(ep_match.group(2))
-                item_data['title'] = ep_match.group(3) if ep_match.group(3) else f"Episode {item_data['episode_number']}"
-            
-            # Parse actual links or message ID
-            if links_raw.lower().startswith('msgid:'):
-                try:
-                    msg_id = int(links_raw.split(':', 1)[1].strip())
-                    item_data['message_id'] = msg_id
-                    item_data['watch_links'] = []
-                    item_data['download_links'] = []
-                except ValueError:
-                    print(f"WARNING: Invalid Message ID in {se_identifier}: {links_raw}")
-                    continue
-            else:
-                link_parts = [p.strip() for p in links_raw.split(',') if p.strip()]
-                watch_links = []
-                download_links = []
-                # Assuming the first link is watch, second is download if only two are given
-                # Or if explicitly specified like "Watch:url,Download:url"
-                for idx, link_part in enumerate(link_parts):
-                    if ':' in link_part:
-                        lang_type, url = link_part.split(':', 1)
-                        if lang_type.lower() == 'watch':
-                            watch_links.append({'lang': 'Link', 'url': url.strip()}) # General link type
-                        elif lang_type.lower() == 'download':
-                            download_links.append({'lang': 'Link', 'url': url.strip()})
-                        else: # Assume it's a language specific link
-                            watch_links.append({'lang': lang_type.strip().title(), 'url': url.strip()})
-                    else: # Assume general link, add to watch links
-                        if idx == 0: watch_links.append({'lang': 'Link', 'url': link_part})
-                        else: download_links.append({'lang': 'Link', 'url': link_part})
-                item_data['watch_links'] = watch_links
-                item_data['download_links'] = download_links
-                item_data['message_id'] = None
-
-            parsed_items.append(item_data)
-        except Exception as e:
-            print(f"ERROR: Failed to parse series item '{item_str}'. Error: {e}")
-            continue
-    return parsed_items
 
 # ======================================================================
 # --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য ---
@@ -551,20 +467,14 @@ detail_html = """
       {% if movie.type == 'movie' and (movie.watch_links or movie.download_links) %}
       <div class="action-buttons-container">
           {% for link in movie.watch_links %}
-              {% if link.get('url') %}<a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn">
+              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn">
                   <i class="fas fa-play"></i> Watch ({{ link.lang }})
               </a>
-              {% elif link.get('message_id') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_Link" class="action-btn telegram">
-                  <i class="fa-brands fa-telegram"></i> Watch (Telegram)
-              </a>{% endif %}
           {% endfor %}
           {% for link in movie.download_links %}
-              {% if link.get('url') %}<a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn download">
+              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn download">
                   <i class="fas fa-download"></i> Download ({{ link.lang }})
               </a>
-              {% elif link.get('message_id') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_Link" class="action-btn download telegram">
-                  <i class="fa-brands fa-telegram"></i> Download (Telegram)
-              </a>{% endif %}
           {% endfor %}
       </div>
       {% endif %}
@@ -585,15 +495,13 @@ detail_html = """
                 <span class="episode-title">Complete Season {{ pack.season }} Pack</span>
                 <div class="episode-buttons" style="width: 100%;">
                     {% for link in pack.watch_links %}
-                    {% if link.get('url') %}<a href="{{ link.url }}" target="_blank" class="episode-button" style="flex-grow:1; justify-content:center;"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
-                    {% elif link.get('message_id') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button telegram" style="flex-grow:1; justify-content:center;"><i class="fa-brands fa-telegram"></i> Watch (Telegram)</a>{% endif %}
+                    <a href="{{ link.url }}" target="_blank" class="episode-button" style="flex-grow:1; justify-content:center;"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
                     {% endfor %}
                     {% for link in pack.download_links %}
-                    {% if link.get('url') %}<a href="{{ link.url }}" target="_blank" class="episode-button download" style="flex-grow:1; justify-content:center;"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
-                    {% elif link.get('message_id') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button download telegram" style="flex-grow:1; justify-content:center;"><i class="fa-brands fa-telegram"></i> Download (Telegram)</a>{% endif %}
+                    <a href="{{ link.url }}" target="_blank" class="episode-button download" style="flex-grow:1; justify-content:center;"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
                     {% endfor %}
                     {% if pack.message_id %}
-                    <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button telegram" style="flex-grow:1; justify-content:center;"><i class="fa-brands fa-telegram"></i> Get Pack (Telegram)</a>
+                    <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button telegram" style="flex-grow:1; justify-content:center;"><i class="fa-brands fa-telegram"></i> Get Pack</a>
                     {% endif %}
                 </div>
             </div>
@@ -605,15 +513,13 @@ detail_html = """
                 <span class="episode-title">S{{ "%02d"|format(ep.season) }}E{{ "%02d"|format(ep.episode_number) }}: {{ ep.title or 'Episode ' + ep.episode_number|string }}</span>
                 <div class="episode-buttons">
                     {% for link in ep.watch_links %}
-                      {% if link.get('url') %}<a href="{{ link.url }}" target="_blank" class="episode-button"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
-                      {% elif link.get('message_id') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Watch (Telegram)</a>{% endif %}
+                      <a href="{{ link.url }}" target="_blank" class="episode-button"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
                     {% endfor %}
                     {% for link in ep.download_links %}
-                      {% if link.get('url') %}<a href="{{ link.url }}" target="_blank" class="episode-button download"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
-                      {% elif link.get('message_id') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button download telegram"><i class="fa-brands fa-telegram"></i> Download (Telegram)</a>{% endif %}
+                      <a href="{{ link.url }}" target="_blank" class="episode-button download"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
                     {% endfor %}
                     {% if ep.message_id %}
-                      <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get (Telegram)</a>
+                      <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get</a>
                     {% endif %}
                 </div>
               </div>
@@ -697,35 +603,18 @@ hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray)
   <h2>Add New Content (Manual)</h2>
   <form method="post" action="{{ url_for('admin') }}">
     <div class="form-group"><label>Title (Required):</label><input type="text" name="title" required /></div>
-    <div class="form-group"><label>Poster URL:</label><input type="url" name="poster" /></div>
-    <div class="form-group"><label>Overview:</label><textarea name="overview"></textarea></div>
-    <div class="form-group"><label>Genres (comma separated):</label><input type="text" name="genres" placeholder="e.g. Action, Drama" /></div>
-    <div class="form-group"><label>Languages (comma separated):</label><input type="text" name="languages" placeholder="e.g. Hindi, English, Bangla" /></div>
-    <div class="form-group"><label>Poster Badge:</label><input type="text" name="poster_badge" placeholder="e.g. DUB, NEW, UHD" /></div>
     <div class="form-group"><label>Content Type:</label><select name="content_type" id="content_type" onchange="toggleFields()"><option value="movie">Movie</option><option value="series">TV/Web Series</option></select></div>
-    
     <div id="movie_fields">
-      <div class="form-group"><label>Watch Links (e.g., Hindi: url1, Bangla: url2, or Telegram: MsgId:123):</label><textarea name="watch_links_str"></textarea></div>
-      <div class="form-group"><label>Download Links (e.g., 480p: url1, 720p: url2, or Telegram: MsgId:456):</label><textarea name="download_links_str"></textarea></div>
-      <hr><p><b>OR</b> Get Movie from Telegram (Old Method)</p>
+      <div class="form-group"><label>Watch Links (e.g., Hindi: url1, Bangla: url2):</label><textarea name="watch_links_str"></textarea></div>
+      <div class="form-group"><label>Download Links (e.g., 480p: url1, 720p: url2):</label><textarea name="download_links_str"></textarea></div>
+      <hr><p><b>OR</b> Get from Telegram</p>
       <div id="telegram_files_container"></div><button type="button" onclick="addTelegramFileField()" class="add-btn">Add Telegram File</button>
     </div>
-
     <div id="episode_fields" style="display: none;">
-      <h3>Season Packs</h3>
-      <div id="season_packs_container"></div>
-      <button type="button" onclick="addSeasonPackField()" class="add-btn">Add Season Pack</button>
-      <hr style="margin: 20px 0;">
-
-      <h3>Individual Episodes</h3>
-      <div id="episodes_container"></div>
+      <h3>Episodes</h3><div id="episodes_container"></div>
       <button type="button" onclick="addEpisodeField()" class="add-btn">Add Episode</button>
     </div>
-    
-    <hr style="margin: 20px 0;">
-    <div class="form-group"><input type="checkbox" name="is_trending" value="true"><label style="display: inline-block;">Is Trending?</label></div>
-    <div class="form-group"><input type="checkbox" name="is_coming_soon" value="true"><label style="display: inline-block;">Is Coming Soon?</label></div>
-    <button type="submit">Add Content</button>
+    <hr style="margin: 20px 0;"><button type="submit">Add Content</button>
   </form>
   <hr class="section-divider">
   <h2>Manage Content</h2>
@@ -755,8 +644,7 @@ hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray)
     function confirmDelete(id, title) { if (confirm('Delete "' + title + '"?')) window.location.href = '/delete_movie/' + id; }
     function toggleFields() { var isSeries = document.getElementById('content_type').value === 'series'; document.getElementById('episode_fields').style.display = isSeries ? 'block' : 'none'; document.getElementById('movie_fields').style.display = isSeries ? 'none' : 'block'; }
     function addTelegramFileField() { const c = document.getElementById('telegram_files_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Quality (e.g., 720p):</label><input type="text" name="telegram_quality[]" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>`; c.appendChild(d); }
-    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url, or Telegram: MsgId:123):</label><textarea name="episode_watch_links_str[]"></textarea></div><div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url, or Telegram: MsgId:456):</label><textarea name="episode_download_links_str[]"></textarea></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
-    function addSeasonPackField() { const c = document.getElementById('season_packs_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" required /></div><div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url, or Telegram: MsgId:123):</label><textarea name="pack_watch_links_str[]"></textarea></div><div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url, or Telegram: MsgId:456):</label><textarea name="pack_download_links_str[]"></textarea></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Pack</button>`; c.appendChild(d); }
+    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url):</label><textarea name="episode_watch_links_str[]"></textarea></div><div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url):</label><textarea name="episode_download_links_str[]"></textarea></div><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
     document.addEventListener('DOMContentLoaded', toggleFields);
   </script>
 </body></html>
@@ -788,9 +676,9 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
     <div class="form-group"><label>Content Type:</label><select name="content_type" id="content_type" onchange="toggleFields()"><option value="movie" {% if movie.type == 'movie' %}selected{% endif %}>Movie</option><option value="series" {% if movie.type == 'series' %}selected{% endif %}>TV/Web Series</option></select></div>
     
     <div id="movie_fields">
-        <div class="form-group"><label>Watch Links (e.g., Hindi: url1, Bangla: url2, or Telegram: MsgId:123):</label><textarea name="watch_links_str">{{ format_links_for_edit(movie.watch_links) }}</textarea></div>
-        <div class="form-group"><label>Download Links (e.g., 480p: url1, 720p: url2, or Telegram: MsgId:456):</label><textarea name="download_links_str">{{ format_links_for_edit(movie.download_links) }}</textarea></div>
-        <hr><p><b>OR</b> Get from Telegram (Old Method)</p>
+        <div class="form-group"><label>Watch Links (e.g., Hindi: url1, Bangla: url2):</label><textarea name="watch_links_str">{{ format_links_for_edit(movie.watch_links) }}</textarea></div>
+        <div class="form-group"><label>Download Links (e.g., 480p: url1, 720p: url2):</label><textarea name="download_links_str">{{ format_links_for_edit(movie.download_links) }}</textarea></div>
+        <hr><p><b>OR</b> Get from Telegram</p>
         <div id="telegram_files_container">
             {% if movie.type == 'movie' and movie.files %}{% for file in movie.files %}
             <div class="dynamic-item">
@@ -809,8 +697,10 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
               {% for pack in movie.season_packs | sort(attribute='season') %}
               <div class="dynamic-item">
                 <div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" value="{{ pack.season }}" required /></div>
-                <div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url, or Telegram: MsgId:123):</label><textarea name="pack_watch_links_str[]">{{ format_links_for_edit(pack.watch_links) }}</textarea></div>
-                <div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url, or Telegram: MsgId:456):</label><textarea name="pack_download_links_str[]">{{ format_links_for_edit(pack.download_links) }}</textarea></div>
+                <div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url):</label><textarea name="pack_watch_links_str[]">{{ format_links_for_edit(pack.watch_links) }}</textarea></div>
+                <div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url):</label><textarea name="pack_download_links_str[]">{{ format_links_for_edit(pack.download_links) }}</textarea></div>
+                <hr><p style="text-align:center; margin-bottom:10px;"><b>OR</b></p>
+                <div class="form-group"><label>Get from Telegram (Message ID):</label><input type="number" name="pack_message_id[]" value="{{ pack.message_id or '' }}" /></div>
                 <button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Pack</button>
               </div>
               {% endfor %}
@@ -825,8 +715,9 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
         <div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="{{ ep.season or 1 }}" required /></div>
         <div class="form-group"><label>Ep Number:</label><input type="number" name="episode_number[]" value="{{ ep.episode_number }}" required /></div>
         <div class="form-group"><label>Ep Title:</label><input type="text" name="episode_title[]" value="{{ ep.title or '' }}" /></div>
-        <div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url, or Telegram: MsgId:123):</label><textarea name="episode_watch_links_str[]">{{ format_links_for_edit(ep.watch_links) }}</textarea></div>
-        <div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url, or Telegram: MsgId:456):</label><textarea name="episode_download_links_str[]">{{ format_links_for_edit(ep.download_links) }}</textarea></div>
+        <div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url):</label><textarea name="episode_watch_links_str[]">{{ format_links_for_edit(ep.watch_links) }}</textarea></div>
+        <div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url):</label><textarea name="episode_download_links_str[]">{{ format_links_for_edit(ep.download_links) }}</textarea></div>
+        <div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" value="{{ ep.message_id or '' }}" /></div>
         <button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>
       </div>{% endfor %}{% endif %}</div><button type="button" onclick="addEpisodeField()" class="add-btn">Add Episode</button>
     </div>
@@ -840,8 +731,8 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
   <script>
     function toggleFields() { var isSeries = document.getElementById('content_type').value === 'series'; document.getElementById('episode_fields').style.display = isSeries ? 'block' : 'none'; document.getElementById('movie_fields').style.display = isSeries ? 'none' : 'block'; }
     function addTelegramFileField() { const c = document.getElementById('telegram_files_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Quality (e.g., 720p):</label><input type="text" name="telegram_quality[]" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>`; c.appendChild(d); }
-    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url, or Telegram: MsgId:123):</label><textarea name="episode_watch_links_str[]"></textarea></div><div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url, or Telegram: MsgId:456):</label><textarea name="episode_download_links_str[]"></textarea></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
-    function addSeasonPackField() { const c = document.getElementById('season_packs_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" required /></div><div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url, or Telegram: MsgId:123):</label><textarea name="pack_watch_links_str[]"></textarea></div><div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url, or Telegram: MsgId:456):</label><textarea name="pack_download_links_str[]"></textarea></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Pack</button>`; c.appendChild(d); }
+    function addEpisodeField() { const c = document.getElementById('episodes_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Season Number:</label><input type="number" name="episode_season[]" value="1" required /></div><div class="form-group"><label>Episode Number:</label><input type="number" name="episode_number[]" required /></div><div class="form-group"><label>Episode Title:</label><input type="text" name="episode_title[]" /></div><div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url):</label><textarea name="episode_watch_links_str[]"></textarea></div><div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url):</label><textarea name="episode_download_links_str[]"></textarea></div><div class="form-group"><label>Telegram Message ID:</label><input type="number" name="episode_message_id[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>`; c.appendChild(d); }
+    function addSeasonPackField() { const c = document.getElementById('season_packs_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = '<div class="form-group"><label>Season Number:</label><input type="number" name="pack_season[]" required /></div><div class="form-group"><label>Watch Links (e.g., Hindi: url, Eng: url):</label><textarea name="pack_watch_links_str[]"></textarea></div><div class="form-group"><label>Download Links (e.g., 480p: url, 720p: url):</label><textarea name="pack_download_links_str[]"></textarea></div><hr><p style="text-align:center; margin-bottom:10px;"><b>OR</b></p><div class="form-group"><label>Get from Telegram (Message ID):</label><input type="number" name="pack_message_id[]" /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Pack</button>'; c.appendChild(d); }
     document.addEventListener('DOMContentLoaded', toggleFields);
   </script>
 </body></html>
@@ -891,18 +782,7 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
             
             if not results: return None
             
-            # Prioritize exact title match or closest year match if multiple results
-            best_match = None
-            if query_year:
-                for r in results:
-                    release_year = (r.get('release_date') or r.get('first_air_date', ''))[:4]
-                    if release_year == str(query_year):
-                        best_match = r
-                        break
-            if not best_match:
-                best_match = results[0] # Fallback to first result
-            
-            tmdb_id = best_match.get("id")
+            tmdb_id = results[0].get("id")
             detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=videos"
             detail_res = requests.get(detail_url, timeout=10)
             detail_res.raise_for_status()
@@ -910,8 +790,7 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
             
             trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
             
-            # Filter out 'English' from TMDb languages unless explicitly needed
-            language_names = [lang['english_name'] for lang in res_json.get('spoken_languages', []) if lang['english_name'].lower() != 'english']
+            language_names = [lang['english_name'] for lang in res_json.get('spoken_languages', [])]
 
             details = {
                 "tmdb_id": tmdb_id, 
@@ -1016,85 +895,29 @@ def admin():
     if request.method == "POST":
         user_title = request.form.get("title")
         content_type = request.form.get("content_type", "movie")
-        
-        # Manually provided details
-        manual_poster = request.form.get("poster", "").strip()
-        manual_overview = request.form.get("overview", "").strip()
-        manual_genres = [g.strip() for g in request.form.get("genres", "").split(',') if g.strip()]
-        manual_languages = [lang.strip() for lang in request.form.get("languages", "").split(',') if lang.strip()]
-        manual_poster_badge = request.form.get("poster_badge", "").strip() or None
-
         tmdb_data = get_tmdb_details_from_api(user_title, content_type) or {}
         
         doc_data = {
             "title": user_title, 
             "type": content_type,
-            "is_trending": request.form.get("is_trending") == "true", 
-            "is_coming_soon": request.form.get("is_coming_soon") == "true", 
-            "view_count": 0,
+            "is_trending": False, 
+            "is_coming_soon": False, 
+            "watch_links": [], "download_links": [], "files": [], "episodes": [], "season_packs": [],
             "created_at": datetime.now(timezone.utc)
         }
-        
-        # Merge TMDb data with manual overrides
-        doc_data['poster'] = manual_poster if manual_poster else tmdb_data.get('poster')
-        doc_data['overview'] = manual_overview if manual_overview else tmdb_data.get('overview')
-        doc_data['genres'] = manual_genres if manual_genres else tmdb_data.get('genres', [])
-        doc_data['languages'] = manual_languages if manual_languages else tmdb_data.get('languages', [])
-        doc_data['poster_badge'] = manual_poster_badge if manual_poster_badge else tmdb_data.get('poster_badge') # poster_badge usually manually set
-        doc_data['release_date'] = tmdb_data.get('release_date')
-        doc_data['vote_average'] = tmdb_data.get('vote_average')
-        doc_data['trailer_key'] = tmdb_data.get('trailer_key')
-        doc_data['tmdb_id'] = tmdb_data.get('tmdb_id')
+        tmdb_data.pop('tmdb_title', None)
+        doc_data.update(tmdb_data)
 
         if content_type == "movie":
-            doc_data['watch_links'] = parse_links_from_string(request.form.get('watch_links_str', ''))
-            doc_data['download_links'] = parse_links_from_string(request.form.get('download_links_str', ''))
+            doc_data['watch_links'] = parse_links_from_string(request.form.get('watch_links_str'))
+            doc_data['download_links'] = parse_links_from_string(request.form.get('download_links_str'))
             doc_data['files'] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
-            doc_data["episodes"] = [] # Ensure these are empty for movies
-            doc_data["season_packs"] = []
         else: # Series
-            doc_data["episodes"] = []
-            for i in range(len(request.form.getlist('episode_season[]'))):
-                ep_data = {
-                    "season": int(request.form.getlist('episode_season[]')[i]),
-                    "episode_number": int(request.form.getlist('episode_number[]')[i]),
-                    "title": request.form.getlist('episode_title[]')[i].strip() or f"Episode {request.form.getlist('episode_number[]')[i]}",
-                    "watch_links": parse_links_from_string(request.form.getlist('episode_watch_links_str[]')[i]),
-                    "download_links": parse_links_from_string(request.form.getlist('episode_download_links_str[]')[i]),
-                }
-                doc_data["episodes"].append(ep_data)
-
-            doc_data["season_packs"] = []
-            for i in range(len(request.form.getlist('pack_season[]'))):
-                pack_data = {
-                    "season": int(request.form.getlist('pack_season[]')[i]),
-                    "watch_links": parse_links_from_string(request.form.getlist('pack_watch_links_str[]')[i]),
-                    "download_links": parse_links_from_string(request.form.getlist('pack_download_links_str[]')[i]),
-                }
-                doc_data["season_packs"].append(pack_data)
-
-            doc_data["watch_links"] = [] # Ensure these are empty for series
-            doc_data["download_links"] = []
-            doc_data["files"] = []
+            doc_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
         
-        # Try to find existing content by TMDb ID or title to avoid duplicates
-        existing_movie = None
-        if tmdb_data and tmdb_data.get('tmdb_id'):
-            existing_movie = movies.find_one({"tmdb_id": tmdb_data['tmdb_id']})
-        if not existing_movie:
-            existing_movie = movies.find_one({"title": user_title, "type": content_type})
-
-        if existing_movie:
-            movies.update_one({"_id": existing_movie['_id']}, {"$set": doc_data})
-            content_id_to_post = existing_movie['_id']
-            print(f"INFO: Updated existing content: {user_title}")
-        else:
-            result = movies.insert_one(doc_data)
-            content_id_to_post = result.inserted_id
-            print(f"INFO: Added new content: {user_title}")
-        
-        if content_id_to_post:
-            post_to_public_channel(content_id_to_post, post_type='content')
+        result = movies.insert_one(doc_data)
+        if result.inserted_id:
+            post_to_public_channel(result.inserted_id, post_type='content')
 
         return redirect(url_for('admin'))
 
@@ -1138,29 +961,18 @@ def edit_movie(movie_id):
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
         else: # Series
-            new_episodes = []
-            for i in range(len(request.form.getlist('episode_season[]'))):
-                ep_data = {
-                    "season": int(request.form.getlist('episode_season[]')[i]),
-                    "episode_number": int(request.form.getlist('episode_number[]')[i]),
-                    "title": request.form.getlist('episode_title[]')[i].strip() or f"Episode {request.form.getlist('episode_number[]')[i]}",
-                    "watch_links": parse_links_from_string(request.form.getlist('episode_watch_links_str[]')[i]),
-                    "download_links": parse_links_from_string(request.form.getlist('episode_download_links_str[]')[i]),
-                }
-                new_episodes.append(ep_data)
-
-            new_season_packs = []
-            for i in range(len(request.form.getlist('pack_season[]'))):
-                pack_data = {
-                    "season": int(request.form.getlist('pack_season[]')[i]),
-                    "watch_links": parse_links_from_string(request.form.getlist('pack_watch_links_str[]')[i]),
-                    "download_links": parse_links_from_string(request.form.getlist('pack_download_links_str[]')[i]),
-                }
-                new_season_packs.append(pack_data)
-
-            update_data["episodes"] = new_episodes
-            update_data["season_packs"] = new_season_packs
-            
+            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
+            update_data["season_packs"] = [{
+                "season": int(s),
+                "watch_links": parse_links_from_string(wl),
+                "download_links": parse_links_from_string(dl),
+                "message_id": int(mid) if mid and mid.isdigit() else None
+            } for s, wl, dl, mid in zip(
+                request.form.getlist('pack_season[]'), 
+                request.form.getlist('pack_watch_links_str[]'), 
+                request.form.getlist('pack_download_links_str[]'), 
+                request.form.getlist('pack_message_id[]')
+            ) if s]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"watch_links": "", "download_links": "", "files": ""}})
         
         return redirect(url_for('admin'))
@@ -1219,7 +1031,6 @@ def telegram_webhook():
         chat_id = message['chat']['id']
         text = message.get('text', '').strip()
         
-        # --- /start command handling ---
         if text.startswith('/start'):
             payload_str = text.split(' ', 1)[-1]
             if payload_str != '/start':
@@ -1229,26 +1040,7 @@ def telegram_webhook():
                     movie = movies.find_one({"_id": ObjectId(movie_id_str)})
                     if not movie: raise ValueError("Movie not found")
 
-                    # Handle watch/download links that reference a message_id
-                    if len(parts) == 2 and parts[1] == 'Link':
-                        # For movies with Telegram message_id in watch/download links
-                        # This scenario needs more specific handling if multiple links refer to different message_ids
-                        # For simplicity, if any watch_link or download_link has a message_id, send it.
-                        # You might need to refine this based on how you store/want to retrieve specific links.
-                        found_message_id = None
-                        for link_list in [movie.get('watch_links', []), movie.get('download_links', [])]:
-                            for link in link_list:
-                                if link.get('message_id'):
-                                    found_message_id = link['message_id']
-                                    break
-                            if found_message_id: break
-                        
-                        if found_message_id:
-                            requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': found_message_id})
-                        else:
-                            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "Sorry, this specific link is not available via Telegram or message ID not found. Please check the website for direct links."})
-
-                    elif len(parts) == 2 and parts[1].startswith('S'): # Season pack
+                    if len(parts) == 2 and parts[1].startswith('S'): # Season pack
                         season_num = int(parts[1][1:])
                         pack = next((p for p in movie.get('season_packs', []) if p['season'] == season_num), None)
                         if pack and pack.get('message_id'):
@@ -1256,7 +1048,7 @@ def telegram_webhook():
                         else:
                             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "Sorry, this season pack is not available via Telegram. Please check the website for direct links."})
                     
-                    elif len(parts) == 2: # Movie file (old method for direct files)
+                    elif len(parts) == 2: # Movie file
                         quality = parts[1]
                         file_info = next((f for f in movie.get('files', []) if f['quality'] == quality), None)
                         if file_info:
@@ -1267,24 +1059,19 @@ def telegram_webhook():
                         ep_info = next((e for e in movie.get('episodes', []) if e['season'] == season and e['episode_number'] == episode), None)
                         if ep_info and ep_info.get('message_id'):
                             requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': ep_info['message_id']})
-                        else:
-                             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "Sorry, this episode is not available via Telegram. Please check the website for direct links."})
 
                 except Exception as e:
                     print(f"Error processing start payload: {e}")
-                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "দুঃখিত, আপনার অনুরোধটি প্রক্রিয়া করা যায়নি।"})
             else:
                  welcome_text = (f"👋 Welcome!\n\nI am {BOT_USERNAME}, your assistant for finding movies and series.\n\n"
-                                 f"🌐 Please visit our website to browse thousands of titles: {WEBSITE_URL}")
+                                 f"🌐 Please visit our website to browse thousands of titles.")
                  requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_text, 'disable_web_page_preview': 'true'})
             
             return jsonify(status='ok')
 
-        # --- Admin commands (only for ADMIN_USER_IDS) ---
         if str(chat_id) not in ADMIN_USER_IDS:
             return jsonify(status='ok')
         
-        # --- /add command (for movies, existing logic) ---
         if text.startswith('/add '):
             try:
                 parts = text.split('/add ', 1)[1].split('|')
@@ -1305,86 +1092,39 @@ def telegram_webhook():
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Sorry, could not find any movie named '{user_title}'."})
                     return jsonify(status='ok')
                 
-                final_languages = tmdb_data.get('languages', [])
-                # Ensure the user-provided badge language is present
-                if badge and badge.title() not in final_languages:
-                    final_languages.insert(0, badge.title()) # Add user-defined language at the beginning
-                
-                movie_doc = {
-                    "title": user_title, 
-                    "type": "movie",
-                    "poster": tmdb_data.get('poster'),
-                    "overview": tmdb_data.get('overview'),
-                    "release_date": tmdb_data.get('release_date'),
-                    "genres": tmdb_data.get('genres', []),
-                    "languages": final_languages, # Use filtered and user-augmented languages
-                    "vote_average": tmdb_data.get('vote_average'),
-                    "trailer_key": tmdb_data.get('trailer_key'),
-                    "tmdb_id": tmdb_data.get('tmdb_id'),
-                    "poster_badge": badge, 
-                    "watch_links": parse_links_from_string(watch_links_str), 
-                    "download_links": parse_links_from_string(download_links_str), 
-                    "files": [], # This command doesn't handle separate telegram files, use admin panel for that
-                    "episodes": [],
-                    "season_packs": [],
-                    "is_trending": False,
-                    "is_coming_soon": False,
-                    "view_count": 0,
-                    "created_at": datetime.now(timezone.utc)
-                }
-                
-                # Check for existing movie by TMDb ID or title to update instead of creating new
-                existing_movie = None
-                if movie_doc.get('tmdb_id'):
-                    existing_movie = movies.find_one({"tmdb_id": movie_doc['tmdb_id']})
-                if not existing_movie:
-                    existing_movie = movies.find_one({"title": user_title, "type": "movie"})
-
-                if existing_movie:
-                    movies.update_one({"_id": existing_movie['_id']}, {"$set": movie_doc})
-                    content_id_to_post = existing_movie['_id']
-                    print(f"INFO: Updated existing movie: {user_title}")
+                ### --- পরিবর্তন শুরু (CHANGE START) --- ###
+                # ব্যবহারকারীর দেওয়া ভাষাকে অগ্রাধিকার দেওয়া হচ্ছে
+                final_languages = []
+                if badge:
+                    # যদি ব্যবহারকারী ভাষা উল্লেখ করে, তবে শুধু সেই ভাষাই ব্যবহৃত হবে
+                    final_languages.append(badge.title())
                 else:
-                    result = movies.insert_one(movie_doc)
-                    content_id_to_post = result.inserted_id
-                    print(f"INFO: Added new movie: {user_title}")
+                    # যদি কোনো ভাষা উল্লেখ না থাকে, তবে TMDb থেকে প্রাপ্ত ভাষা ব্যবহৃত হবে
+                    final_languages = tmdb_data.get('languages', [])
+                ### --- পরিবর্তন শেষ (CHANGE END) --- ###
 
-                if content_id_to_post:
-                    post_to_public_channel(content_id_to_post, post_type='content')
+                tmdb_data.pop('tmdb_title', None)
+                movie_doc = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
+                
+                result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
+                
+                content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})['_id']
+                post_to_public_channel(content_id_to_post, post_type='content')
                 
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added/updated `{user_title}` to the website.", 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /add command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format for /add! Use `/add` for help."})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/add` for help."})
         
         elif text == '/add':
             reply_text = (f"👇 Use the format below to add a movie:\n\n"
                           f"`/add Movie Name (Year) [Language] | Watch Links | Download Links`\n\n"
-                          f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*\n"
-                          f"*For Telegram links: `Telegram: MsgId:12345`*")
+                          f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
-        # --- New /addseriesfull command (for full series) ---
-        elif text.startswith('/addseriesfull '):
+        elif text.startswith('/addseries '):
             try:
-                # Splitting the main parts
-                main_parts = text.split('/addseriesfull ', 1)[1].split('|')
-                if not (2 <= len(main_parts) <= 3): raise ValueError("Incorrect format for /addseriesfull")
-
-                title_part = main_parts[0].strip()
-                season_packs_str = ""
-                episodes_str = ""
-
-                # Determine which sections are present
-                for part in main_parts[1:]:
-                    part = part.strip()
-                    if part.lower().startswith('seasonpacks:'):
-                        season_packs_str = part.split(':', 1)[1].strip()
-                    elif part.lower().startswith('episodes:'):
-                        episodes_str = part.split(':', 1)[1].strip()
-                    else:
-                        raise ValueError("Unknown section in /addseriesfull command.")
-
+                title_part = text.split('/addseries ', 1)[1].strip()
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
@@ -1392,86 +1132,112 @@ def telegram_webhook():
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
                 year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
 
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Searching for series `{user_title}` and processing links...", 'parse_mode': 'Markdown'})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Searching for series `{user_title}`...", 'parse_mode': 'Markdown'})
                 tmdb_data = get_tmdb_details_from_api(user_title, "series", year)
 
                 if not tmdb_data:
                     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Sorry, could not find any series named '{user_title}'."})
                     return jsonify(status='ok')
                 
-                final_languages = tmdb_data.get('languages', [])
-                if badge and badge.title() not in final_languages:
-                    final_languages.insert(0, badge.title())
-                
-                # Parse season packs and episodes using helper
-                parsed_season_packs = parse_series_links_from_string(season_packs_str, is_pack=True)
-                parsed_episodes = parse_series_links_from_string(episodes_str, is_pack=False)
-
-                series_doc = {
-                    "title": user_title, 
-                    "type": "series",
-                    "poster": tmdb_data.get('poster'),
-                    "overview": tmdb_data.get('overview'),
-                    "release_date": tmdb_data.get('release_date'),
-                    "genres": tmdb_data.get('genres', []),
-                    "languages": final_languages, 
-                    "vote_average": tmdb_data.get('vote_average'),
-                    "trailer_key": tmdb_data.get('trailer_key'),
-                    "tmdb_id": tmdb_data.get('tmdb_id'),
-                    "poster_badge": badge, 
-                    "episodes": parsed_episodes, 
-                    "season_packs": parsed_season_packs,
-                    "watch_links": [], # Series won't have these top-level links
-                    "download_links": [],
-                    "files": [],
-                    "is_trending": False,
-                    "is_coming_soon": False,
-                    "view_count": 0,
-                    "created_at": datetime.now(timezone.utc)
-                }
-                
-                existing_series = None
-                if series_doc.get('tmdb_id'):
-                    existing_series = movies.find_one({"tmdb_id": series_doc['tmdb_id']})
-                if not existing_series:
-                    existing_series = movies.find_one({"title": user_title, "type": "series"})
-
-                if existing_series:
-                    movies.update_one({"_id": existing_series['_id']}, {"$set": series_doc})
-                    content_id_to_post = existing_series['_id']
-                    print(f"INFO: Updated existing series: {user_title}")
+                ### --- পরিবর্তন শুরু (CHANGE START) --- ###
+                # ব্যবহারকারীর দেওয়া ভাষাকে অগ্রাধিকার দেওয়া হচ্ছে
+                final_languages = []
+                if badge:
+                    # যদি ব্যবহারকারী ভাষা উল্লেখ করে, তবে শুধু সেই ভাষাই ব্যবহৃত হবে
+                    final_languages.append(badge.title())
                 else:
-                    result = movies.insert_one(series_doc)
-                    content_id_to_post = result.inserted_id
-                    print(f"INFO: Added new series: {user_title}")
+                    # যদি কোনো ভাষা উল্লেখ না থাকে, তবে TMDb থেকে প্রাপ্ত ভাষা ব্যবহৃত হবে
+                    final_languages = tmdb_data.get('languages', [])
+                ### --- পরিবর্তন শেষ (CHANGE END) --- ###
+                
+                tmdb_data.pop('tmdb_title', None)
+                series_doc = {**tmdb_data, "title": user_title, "type": "series", "languages": final_languages, "poster_badge": badge, "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)}
+                
+                result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": series_doc}, upsert=True)
 
-                if content_id_to_post:
-                    post_to_public_channel(content_id_to_post, post_type='content')
+                if result.upserted_id:
+                    post_to_public_channel(result.upserted_id, post_type='content')
 
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added/updated series `{user_title}` with all details.", 'parse_mode': 'Markdown'})
+                reply_text = f"✅ Successfully added series `{user_title}`.\n\n**Now use `/addepisode` or `/addseasonpack` to add episodes/seasons.**"
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
             except Exception as e:
-                print(f"Error in /addseriesfull command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addseriesfull` for help."})
-        
-        elif text == '/addseriesfull':
-            reply_text = (f"👇 Use the format below to add a series with all details:\n\n"
-                          f"`/addseriesfull Series Name (Year) [Language] | SeasonPacks: S1:WatchLink1,DownloadLink1;S2:MsgId:12345 | Episodes: S1E1(Ep Title):WatchLink_E1,DownloadLink_E1;S1E2:MsgId:67890`\n\n"
-                          f"*Use `S<SeasonNum>` for season packs, `S<SeasonNum>E<EpisodeNum>(Ep Title)` for episodes.*\n"
-                          f"*Separate multiple links with commas. Use `;` to separate multiple season packs/episodes.*\n"
-                          f"*For Telegram link, use `MsgId:12345` instead of URLs.*")
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+                print(f"Error in /addseries command: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addseries` for help."})
 
-        # Remove old series commands, as /addseriesfull replaces them
-        elif text.startswith('/addseries ') or text == '/addseries':
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ `/addseries` command is deprecated. Please use the comprehensive `/addseriesfull` command or the admin panel."})
-        elif text.startswith('/addepisode ') or text == '/addepisode':
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ `/addepisode` command is deprecated. Please use the comprehensive `/addseriesfull` command or the admin panel."})
-        elif text.startswith('/addseasonpack ') or text == '/addseasonpack':
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ `/addseasonpack` command is deprecated. Please use the comprehensive `/addseriesfull` command or the admin panel."})
+        elif text == '/addseries':
+            reply_text = f"👇 Use this format to create a series page:\n\n`/addseries Series Name (Year) [Language]`"
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+            
+        elif text.startswith('/addepisode '):
+            try:
+                parts = text.split('/addepisode ', 1)[1].split('|')
+                if len(parts) != 4: raise ValueError("Incorrect format")
+                title_part, se_part, watch_links_str, download_links_str = [p.strip() for p in parts]
+                
+                user_title = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+                user_title = re.sub(r'\s*\(?\d{4}\)?$', '', user_title).strip()
+                
+                se_match = re.match(r'S(\d+)E(\d+)', se_part, re.IGNORECASE)
+                if not se_match: raise ValueError("Invalid S/E format")
+                season_num, episode_num = int(se_match.group(1)), int(se_match.group(2))
+
+                series = movies.find_one({"title": user_title, "type": "series"})
+                if not series:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Series `{user_title}` not found. Add it first with `/addseries`.", 'parse_mode': 'Markdown'})
+                    return jsonify(status='ok')
+
+                series_id = series['_id']
+                new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
+                movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
+                movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
+                
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added S{season_num:02d}E{episode_num:02d} to `{user_title}`.", 'parse_mode': 'Markdown'})
+            except Exception as e:
+                print(f"Error in /addepisode command: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addepisode` for help."})
+
+        elif text == '/addepisode':
+            reply_text = (f"👇 Use the format below to add an episode:\n\n"
+                          f"`/addepisode Series Name (Year) | S01E01 | Watch Links | Download Links`")
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+            
+        elif text.startswith('/addseasonpack '):
+            try:
+                parts = text.split('/addseasonpack ', 1)[1].split('|')
+                if len(parts) != 4: raise ValueError("Incorrect format")
+                title_part, season_part, watch_links_str, download_links_str = [p.strip() for p in parts]
+
+                user_title = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+                user_title = re.sub(r'\s*\(?\d{4}\)?$', '', user_title).strip()
+
+                se_match = re.match(r'S(\d+)', season_part, re.IGNORECASE)
+                if not se_match: raise ValueError("Invalid season format")
+                season_num = int(se_match.group(1))
+
+                series = movies.find_one({"title": user_title, "type": "series"})
+                if not series:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Series `{user_title}` not found. Add it first with `/addseries`.", 'parse_mode': 'Markdown'})
+                    return jsonify(status='ok')
+
+                new_pack = {"season": season_num, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
+                
+                movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
+                movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
+                
+                post_to_public_channel(series['_id'], post_type='season_pack', season_num=season_num)
+
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{series['title']}` and posted to channel.", 'parse_mode': 'Markdown'})
+            except Exception as e:
+                print(f"Error in /addseasonpack command: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addseasonpack` for help."})
+
+        elif text == '/addseasonpack':
+            reply_text = (f"👇 Use the format below to add a season pack:\n\n"
+                          f"`/addseasonpack Series Name (Year) | S01 | Watch Links | Download Links`")
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
     return jsonify(status='ok')
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-
