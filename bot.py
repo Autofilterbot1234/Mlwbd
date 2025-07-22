@@ -393,7 +393,7 @@ detail_html = """
   .detail-overview { font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px; }
   
   .action-buttons-container { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
-  .action-btn { background-color: var(--netflix-red); color: white; padding: 12px 25px; font-size: 1rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease; justify-content: center; }
+  .action-btn { background-color: var(--netflix-red); color: white; padding: 15px 30px; font-size: 1.1rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease; justify-content: center; }
   .action-btn.download { background-color: #3b82f6; }
   .action-btn:hover { transform: scale(1.02); filter: brightness(1.1); }
 
@@ -468,12 +468,12 @@ detail_html = """
       <div class="action-buttons-container">
           {% for link in movie.watch_links %}
               <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn">
-                  <i class="fas fa-play"></i> Watch ({{ link.lang }})
+                  <i class="fas fa-play"></i> Watch Now
               </a>
           {% endfor %}
           {% for link in movie.download_links %}
               <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn download">
-                  <i class="fas fa-download"></i> Download ({{ link.lang }})
+                  <i class="fas fa-download"></i> Download Now
               </a>
           {% endfor %}
       </div>
@@ -1031,7 +1031,7 @@ def find_or_create_series(user_title, year, badge, chat_id):
         return series
 
     # যদি সিরিজটি ডাটাবেজে না থাকে
-    print(f"INFO: Series '{user_title}' not found in DB. Creating new entry.")
+    print(f"INFO: Series '{user_title}' not in DB. Creating new entry.")
     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Series page for `{user_title}` not found. Creating it now...", 'parse_mode': 'Markdown'})
     
     tmdb_data = get_tmdb_details_from_api(user_title, "series", year)
