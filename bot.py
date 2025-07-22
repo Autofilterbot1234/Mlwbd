@@ -107,6 +107,16 @@ def parse_links_from_string(link_string: str) -> list:
             links.append({'lang': 'Link', 'url': part})
     return links
 
+def merge_links(existing_links: list, new_links: list) -> list:
+    """
+    দুটি লিঙ্কের তালিকাকে একত্রিত করে। একই 'lang' এর জন্য নতুন লিঙ্ক পুরোনোটিকে প্রতিস্থাপন করবে।
+    """
+    links_dict = {link.get('lang', 'Link').strip(): link.get('url', '').strip() for link in existing_links}
+    for link in new_links:
+        links_dict[link.get('lang', 'Link').strip()] = link.get('url', '').strip()
+    final_links = [{'lang': lang, 'url': url} for lang, url in links_dict.items()]
+    return final_links
+
 # ======================================================================
 # --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য (ডিজাইন আপডেট করা হয়েছে) ---
 # ======================================================================
@@ -1152,30 +1162,72 @@ def telegram_webhook():
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
                 year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
 
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Searching for `{user_title}`...", 'parse_mode': 'Markdown'})
-                tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Processing request for `{user_title}`...", 'parse_mode': 'Markdown'})
                 
-                if not tmdb_data:
-                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Sorry, could not find any movie named '{user_title}'."})
-                    return jsonify(status='ok')
-                
-                final_languages = [badge.title()] if badge else tmdb_data.get('languages', [])
+                new_watch_links = parse_links_from_string(watch_links_str)
+                new_download_links = parse_links_from_string(download_links_str)
 
-                tmdb_data.pop('tmdb_title', None)
-                movie_doc = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
-                
-                result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
-                
-                content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})['_id']
-                post_to_public_channel(content_id_to_post, post_type='content')
-                
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added/updated `{user_title}` to the website.", 'parse_mode': 'Markdown'})
+                existing_movie = movies.find_one({"title": {"$regex": f"^{re.escape(user_title)}$", "$options": "i"}, "type": "movie"})
+
+                if existing_movie:
+                    print(f"INFO: Found existing movie '{user_title}'. Merging links.")
+                    
+                    final_watch_links = merge_links(existing_movie.get('watch_links', []), new_watch_links)
+                    final_download_links = merge_links(existing_movie.get('download_links', []), new_download_links)
+                    
+                    existing_langs = existing_movie.get('languages', [])
+                    new_lang_from_badge = [badge.title()] if badge else []
+                    new_langs_from_links = [link['lang'] for link in new_watch_links + new_download_links]
+                    
+                    all_langs = set(existing_langs + new_lang_from_badge + new_langs_from_links)
+                    final_languages = sorted([lang for lang in all_langs if lang])
+
+                    update_data = {
+                        "$set": {
+                            "watch_links": final_watch_links,
+                            "download_links": final_download_links,
+                            "languages": final_languages,
+                            "poster_badge": badge,
+                            "updated_at": datetime.now(timezone.utc)
+                        }
+                    }
+                    movies.update_one({"_id": existing_movie['_id']}, update_data)
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully updated links for `{user_title}`.", 'parse_mode': 'Markdown'})
+
+                else:
+                    print(f"INFO: Movie '{user_title}' not found. Creating new entry.")
+                    tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
+                    if not tmdb_data:
+                        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Sorry, could not find any movie named '{user_title}' on TMDb."})
+                        return jsonify(status='ok')
+
+                    langs_from_links = [link['lang'] for link in new_watch_links + new_download_links]
+                    initial_languages = sorted(list(set([badge.title()] if badge else [] + langs_from_links)))
+                    
+                    tmdb_data.pop('tmdb_title', None)
+                    movie_doc = {
+                        **tmdb_data, 
+                        "title": user_title, 
+                        "type": "movie", 
+                        "languages": initial_languages or tmdb_data.get('languages', []),
+                        "poster_badge": badge, 
+                        "watch_links": new_watch_links, 
+                        "download_links": new_download_links, 
+                        "created_at": datetime.now(timezone.utc)
+                    }
+                    
+                    result = movies.insert_one(movie_doc)
+                    if result.inserted_id:
+                        post_to_public_channel(result.inserted_id, post_type='content')
+                    
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added `{user_title}` to the website.", 'parse_mode': 'Markdown'})
+
             except Exception as e:
                 print(f"Error in /add command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/add` for help."})
         
         elif text == '/add':
-            reply_text = (f"👇 Use the format below to add a movie:\n\n"
+            reply_text = (f"👇 Use the format below to add or update a movie:\n\n"
                           f"`/add Movie Name (Year) [Language] | Watch Links | Download Links`\n\n"
                           f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
