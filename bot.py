@@ -107,16 +107,6 @@ def parse_links_from_string(link_string: str) -> list:
             links.append({'lang': 'Link', 'url': part})
     return links
 
-def merge_links(existing_links: list, new_links: list) -> list:
-    """
-    দুটি লিঙ্কের তালিকাকে একত্রিত করে। একই 'lang' এর জন্য নতুন লিঙ্ক পুরোনোটিকে প্রতিস্থাপন করবে।
-    """
-    links_dict = {link.get('lang', 'Link').strip(): link.get('url', '').strip() for link in existing_links}
-    for link in new_links:
-        links_dict[link.get('lang', 'Link').strip()] = link.get('url', '').strip()
-    final_links = [{'lang': lang, 'url': url} for lang, url in links_dict.items()]
-    return final_links
-
 # ======================================================================
 # --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য (ডিজাইন আপডেট করা হয়েছে) ---
 # ======================================================================
@@ -448,6 +438,9 @@ detail_html = """
   .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
   .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
+  .other-versions-section { margin-top: 40px; }
+  .version-item { background-color: #1a1a1a; border-left: 4px solid #3b82f6; padding: 20px; border-radius: 5px; margin-bottom: 15px; }
+  .version-item-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 15px; color: #fff; }
   @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
   @media (max-width: 992px) { .detail-content-wrapper { flex-direction: column; align-items: center; text-align: center; } .detail-info { max-width: 100%; } .detail-title { font-size: 3.5rem; } }
   @media (max-width: 768px) { .detail-header { padding: 20px; } .detail-hero { padding: 80px 20px 40px; } .detail-poster { width: 60%; max-width: 220px; height: auto; } .detail-title { font-size: 2.2rem; }
@@ -509,6 +502,33 @@ detail_html = """
       {% if trailer_key %}<div class="trailer-section"><h3 class="section-title">Watch Trailer</h3><div class="video-container"><iframe src="https://www.youtube.com/embed/{{ trailer_key }}" frameborder="0" allowfullscreen></iframe></div></div>{% endif %}
       <div style="margin: 20px 0;"><a href="{{ url_for('contact', report_id=movie._id, title=movie.title) }}" class="download-button" style="background-color:#5a5a5a; text-align:center;"><i class="fas fa-flag"></i> Report a Problem</a></div>
       
+      <!-- অন্যান্য ভাষার সংস্করণ দেখানোর জন্য নতুন কোড -->
+      {% if other_versions %}
+      <div class="other-versions-section">
+        <h3 class="section-title">Other Available Versions</h3>
+        {% for version in other_versions %}
+          <div class="version-item">
+            <p class="version-item-title">
+                <i class="fas fa-language"></i> Available in: {{ version.poster_badge or 'Another Version' }}
+            </p>
+            <div class="action-buttons-container" style="margin-top: 10px; justify-content: flex-start;">
+              {% for link in version.watch_links %}
+                  <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn">
+                      <i class="fas fa-play"></i> Watch ({{ link.lang }})
+                  </a>
+              {% endfor %}
+              {% for link in version.download_links %}
+                  <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn download">
+                      <i class="fas fa-download"></i> Download ({{ link.lang }})
+                  </a>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <!-- অন্যান্য ভাষার সংস্করণ দেখানো শেষ -->
+
       {% if movie.is_coming_soon %}<h3 class="section-title">Coming Soon</h3>
       {% elif movie.type == 'movie' %}
         {% if movie.files %}<div class="download-section"><h3 class="section-title">Get from Telegram</h3>{% for file in movie.files | sort(attribute='quality') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ file.quality }}" class="action-btn" style="background-color: #2AABEE; display: block; text-align:center; margin-top:10px; margin-bottom: 0;"><i class="fa-brands fa-telegram"></i> Get {{ file.quality }}</a>{% endfor %}</div>{% endif %}
@@ -855,17 +875,36 @@ def process_movie_list(movie_list):
 def home():
     query = request.args.get('q')
     if query:
-        movies_list = list(movies.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
+        # সার্চ রেজাল্টে একই নামের মুভির একাধিক সংস্করণ যাতে না আসে, তা নিশ্চিত করা হচ্ছে
+        pipeline = [
+            {"$match": {"title": {"$regex": query, "$options": "i"}}},
+            {"$sort": {"created_at": -1}},
+            {"$group": {"_id": "$title", "latest_doc": {"$first": "$$ROOT"}}},
+            {"$replaceRoot": {"newRoot": "$latest_doc"}}
+        ]
+        movies_list = list(movies.aggregate(pipeline))
         return render_template_string(index_html, movies=process_movie_list(movies_list), query=f'Results for "{query}"', is_full_page_list=True)
+
     all_badges = sorted([badge for badge in movies.distinct("poster_badge") if badge and badge.strip()])
     limit = 12
+    # হোমপেজেও একই নামের মুভি একবার দেখানোর জন্য অ্যাগ্রিগেশন ব্যবহার করা হচ্ছে
+    def get_latest_distinct_movies(match_filter, limit_count):
+        pipeline = [
+            {"$match": match_filter},
+            {"$sort": {"created_at": -1}},
+            {"$group": {"_id": "$title", "latest_doc": {"$first": "$$ROOT"}}},
+            {"$replaceRoot": {"newRoot": "$latest_doc"}},
+            {"$limit": limit_count}
+        ]
+        return list(movies.aggregate(pipeline))
+
     context = {
-        "trending_movies": process_movie_list(list(movies.find({"is_trending": True, "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "latest_movies": process_movie_list(list(movies.find({"type": "movie", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "latest_series": process_movie_list(list(movies.find({"type": "series", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "coming_soon_movies": process_movie_list(list(movies.find({"is_coming_soon": True}).sort('_id', -1).limit(limit))),
-        "recently_added": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(6))),
-        "recently_added_full": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
+        "trending_movies": process_movie_list(get_latest_distinct_movies({"is_trending": True, "is_coming_soon": {"$ne": True}}, limit)),
+        "latest_movies": process_movie_list(get_latest_distinct_movies({"type": "movie", "is_coming_soon": {"$ne": True}}, limit)),
+        "latest_series": process_movie_list(get_latest_distinct_movies({"type": "series", "is_coming_soon": {"$ne": True}}, limit)),
+        "coming_soon_movies": process_movie_list(get_latest_distinct_movies({"is_coming_soon": True}, limit)),
+        "recently_added": process_movie_list(get_latest_distinct_movies({"is_coming_soon": {"$ne": True}}, 6)),
+        "recently_added_full": process_movie_list(get_latest_distinct_movies({"is_coming_soon": {"$ne": True}}, limit)),
         "is_full_page_list": False, "query": "", "all_badges": all_badges
     }
     return render_template_string(index_html, **context)
@@ -875,12 +914,31 @@ def movie_detail(movie_id):
     try:
         obj_id = ObjectId(movie_id)
         movies.update_one({"_id": obj_id}, {"$inc": {"view_count": 1}})
-        movie = movies.find_one({"_id": obj_id})
-        if not movie: return "Content not found", 404
+        
+        main_movie = movies.find_one({"_id": obj_id})
+        if not main_movie:
+            return "Content not found", 404
+
+        other_versions = []
+        movie_title = main_movie.get('title')
+        if movie_title:
+            other_versions = list(movies.find({
+                "title": movie_title,
+                "type": "movie",
+                "_id": {"$ne": obj_id}
+            }))
+
         related_movies = []
-        if movie.get("genres"):
-            related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": obj_id}}).limit(12))
-        return render_template_string(detail_html, movie=movie, trailer_key=movie.get("trailer_key"), related_movies=process_movie_list(related_movies))
+        if main_movie.get("genres"):
+            related_movies = list(movies.find({"genres": {"$in": main_movie["genres"]}, "_id": {"$ne": obj_id}}).limit(12))
+            
+        return render_template_string(
+            detail_html, 
+            movie=main_movie, 
+            trailer_key=main_movie.get("trailer_key"), 
+            related_movies=process_movie_list(related_movies),
+            other_versions=process_movie_list(other_versions)
+        )
     except Exception as e:
         print(f"Error in movie_detail route: {e}")
         return "Content not found or invalid ID", 404
@@ -1091,7 +1149,7 @@ def find_or_create_series(user_title, year, badge, chat_id):
 
 
 # ======================================================================
-# --- Webhook Route (FINAL VERSION) ---
+# --- Webhook Route (FINAL VERSION with Separate Versions Logic) ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
@@ -1162,166 +1220,99 @@ def telegram_webhook():
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
                 year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
 
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Processing request for `{user_title}`...", 'parse_mode': 'Markdown'})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Adding new version for `{user_title}`...", 'parse_mode': 'Markdown'})
                 
+                tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
+                if not tmdb_data:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ TMDb search failed for '{user_title}'. Using title only."})
+                    tmdb_data = {}
+
                 new_watch_links = parse_links_from_string(watch_links_str)
                 new_download_links = parse_links_from_string(download_links_str)
-
-                existing_movie = movies.find_one({"title": {"$regex": f"^{re.escape(user_title)}$", "$options": "i"}, "type": "movie"})
-
-                if existing_movie:
-                    print(f"INFO: Found existing movie '{user_title}'. Merging links.")
-                    
-                    final_watch_links = merge_links(existing_movie.get('watch_links', []), new_watch_links)
-                    final_download_links = merge_links(existing_movie.get('download_links', []), new_download_links)
-                    
-                    existing_langs = existing_movie.get('languages', [])
-                    new_lang_from_badge = [badge.title()] if badge else []
-                    new_langs_from_links = [link['lang'] for link in new_watch_links + new_download_links]
-                    
-                    all_langs = set(existing_langs + new_lang_from_badge + new_langs_from_links)
-                    final_languages = sorted([lang for lang in all_langs if lang])
-
-                    update_data = {
-                        "$set": {
-                            "watch_links": final_watch_links,
-                            "download_links": final_download_links,
-                            "languages": final_languages,
-                            "poster_badge": badge,
-                            "updated_at": datetime.now(timezone.utc)
-                        }
-                    }
-                    movies.update_one({"_id": existing_movie['_id']}, update_data)
-                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully updated links for `{user_title}`.", 'parse_mode': 'Markdown'})
-
-                else:
-                    print(f"INFO: Movie '{user_title}' not found. Creating new entry.")
-                    tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
-                    if not tmdb_data:
-                        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Sorry, could not find any movie named '{user_title}' on TMDb."})
-                        return jsonify(status='ok')
-
-                    langs_from_links = [link['lang'] for link in new_watch_links + new_download_links]
-                    initial_languages = sorted(list(set([badge.title()] if badge else [] + langs_from_links)))
-                    
-                    tmdb_data.pop('tmdb_title', None)
-                    movie_doc = {
-                        **tmdb_data, 
-                        "title": user_title, 
-                        "type": "movie", 
-                        "languages": initial_languages or tmdb_data.get('languages', []),
-                        "poster_badge": badge, 
-                        "watch_links": new_watch_links, 
-                        "download_links": new_download_links, 
-                        "created_at": datetime.now(timezone.utc)
-                    }
-                    
-                    result = movies.insert_one(movie_doc)
-                    if result.inserted_id:
-                        post_to_public_channel(result.inserted_id, post_type='content')
-                    
-                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added `{user_title}` to the website.", 'parse_mode': 'Markdown'})
+                
+                langs_from_links = [link['lang'] for link in new_watch_links + new_download_links]
+                current_version_languages = sorted(list(set([badge.title()] if badge else [] + langs_from_links)))
+                
+                tmdb_data.pop('tmdb_title', None)
+                movie_doc = {
+                    **tmdb_data, 
+                    "title": user_title, 
+                    "type": "movie", 
+                    "languages": current_version_languages or tmdb_data.get('languages', []),
+                    "poster_badge": badge,
+                    "watch_links": new_watch_links, 
+                    "download_links": new_download_links, 
+                    "created_at": datetime.now(timezone.utc)
+                }
+                
+                result = movies.insert_one(movie_doc)
+                if result.inserted_id:
+                    post_to_public_channel(result.inserted_id, post_type='content')
+                
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added new version of `{user_title}`.", 'parse_mode': 'Markdown'})
 
             except Exception as e:
                 print(f"Error in /add command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/add` for help."})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Wrong format! Use `/add` for help. Error: {e}"})
         
         elif text == '/add':
-            reply_text = (f"👇 Use the format below to add or update a movie:\n\n"
+            reply_text = (f"👇 Use this format to add a new movie version:\n\n"
                           f"`/add Movie Name (Year) [Language] | Watch Links | Download Links`\n\n"
-                          f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*")
+                          f"*This will always create a new entry for the specified language.*")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
-        # --- নতুন: /addep command (for Series Episodes) ---
+        # --- /addep and /addpack commands (অপরিবর্তিত) ---
         elif text.startswith('/addep '):
             try:
                 parts = text.split('/addep ', 1)[1].split('|')
                 if len(parts) != 4: raise ValueError("Incorrect format")
                 title_part, se_part, watch_links_str, download_links_str = [p.strip() for p in parts]
-                
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
-
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
                 year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
-                
                 se_match = re.match(r'S(\d+)E(\d+)', se_part, re.IGNORECASE)
                 if not se_match: raise ValueError("Invalid S/E format. Use S01E01.")
                 season_num, episode_num = int(se_match.group(1)), int(se_match.group(2))
-
-                # সিরিজ খুঁজে বের করা বা তৈরি করা
                 series = find_or_create_series(user_title, year, badge, chat_id)
-                if not series:
-                    return jsonify(status='ok') # Helper function already sent an error message
-
+                if not series: return jsonify(status='ok')
                 series_id = series['_id']
-                new_episode = {
-                    "season": season_num, 
-                    "episode_number": episode_num, 
-                    "title": f"Episode {episode_num}", 
-                    "watch_links": parse_links_from_string(watch_links_str), 
-                    "download_links": parse_links_from_string(download_links_str), 
-                    "message_id": None
-                }
-                # পুরোনো এপিসোড থাকলে ডিলেট করে নতুনটা যোগ করা
+                new_episode = { "season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None }
                 movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
                 movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
-                
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added S{season_num:02d}E{episode_num:02d} to `{series['title']}`.", 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /addep command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addep` for help."})
-
         elif text == '/addep':
-            reply_text = (f"👇 Use this format to add an episode (it will create the series if it doesn't exist):\n\n"
-                          f"`/addep Series Name (Year) [Language] | S01E01 | Watch Links | Download Links`")
+            reply_text = (f"👇 Use this format to add an episode:\n\n`/addep Series Name (Year) [Language] | S01E01 | Watch Links | Download Links`")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
-
-        # --- নতুন: /addpack command (for Season Packs) ---
         elif text.startswith('/addpack '):
             try:
                 parts = text.split('/addpack ', 1)[1].split('|')
                 if len(parts) != 4: raise ValueError("Incorrect format")
                 title_part, season_part, watch_links_str, download_links_str = [p.strip() for p in parts]
-
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
-
                 year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
                 year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
-
                 se_match = re.match(r'S(\d+)', season_part, re.IGNORECASE)
                 if not se_match: raise ValueError("Invalid season format. Use S01.")
                 season_num = int(se_match.group(1))
-
-                # সিরিজ খুঁজে বের করা বা তৈরি করা
                 series = find_or_create_series(user_title, year, badge, chat_id)
-                if not series:
-                    return jsonify(status='ok')
-
-                new_pack = {
-                    "season": season_num, 
-                    "watch_links": parse_links_from_string(watch_links_str), 
-                    "download_links": parse_links_from_string(download_links_str), 
-                    "message_id": None
-                }
-                
-                # পুরোনো প্যাক থাকলে ডিলেট করে নতুনটা যোগ করা
+                if not series: return jsonify(status='ok')
+                new_pack = { "season": season_num, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None }
                 movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
                 movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
-                
                 post_to_public_channel(series['_id'], post_type='season_pack', season_num=season_num)
-
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{series['title']}` and posted to channel.", 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /addpack command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addpack` for help."})
-
         elif text == '/addpack':
-            reply_text = (f"👇 Use this format to add a season pack (it will create the series if it doesn't exist):\n\n"
-                          f"`/addpack Series Name (Year) [Language] | S01 | Watch Links | Download Links`")
+            reply_text = (f"👇 Use this format to add a season pack:\n\n`/addpack Series Name (Year) [Language] | S01 | Watch Links | Download Links`")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
     return jsonify(status='ok')
