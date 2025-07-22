@@ -88,6 +88,7 @@ def inject_global_vars():
 
 def escape_markdown(text: str) -> str:
     if not isinstance(text, str): return ''
+    # MarkdownV2 escape characters
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
@@ -107,7 +108,7 @@ def parse_links_from_string(link_string: str) -> list:
     return links
 
 # ======================================================================
-# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য ---
+# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য (ডিজাইন আপডেট করা হয়েছে) ---
 # ======================================================================
 def post_to_public_channel(content_id, post_type='content', season_num=None):
     if not PUBLIC_CHANNEL_ID or not WEBSITE_URL:
@@ -126,39 +127,50 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         rating = content.get('vote_average')
         release_date = content.get('release_date')
         
-        escaped_title = escape_markdown(title)
+        caption_parts = []
         
-        caption_parts = [f"🎬 *{escaped_title}*"]
-
-        if release_date:
-            year = release_date.split('-')[0]
-            caption_parts.append(f"🗓️ *Release Year:* {escape_markdown(year)}")
-            
-        if genres:
-            escaped_genres = escape_markdown(", ".join(genres))
-            caption_parts.append(f"🎭 *Genre:* {escaped_genres}")
-
+        # --- পোস্টের ধরন অনুযায়ী শিরোনাম এবং বিবরণ তৈরি ---
         if post_type == 'season_pack' and season_num:
-            caption_parts.insert(1, f"🔥 *Season {season_num} Pack Added*")
+            # সিজন প্যাকের জন্য বিশেষ পোস্ট
+            caption_parts.append(f"🔥 *New Season Pack Added\\!* 🔥")
+            caption_parts.append(f"📺 *Series:* {escape_markdown(title)}")
+            caption_parts.append(f"*Season:* `{escape_markdown(str(season_num))}`")
+            
+            # সিজন প্যাকের ভাষা বের করা
             pack = next((p for p in content.get('season_packs', []) if p['season'] == season_num), None)
             pack_langs = set()
             if pack:
                 for link in pack.get('watch_links', []) + pack.get('download_links', []):
-                    lang = link.get('lang', 'N/A').strip()
-                    if lang and lang != 'N/A': pack_langs.add(lang)
-            languages_str = ", ".join(sorted(list(pack_langs))) or "Not Specified"
-            if languages_str != "Not Specified":
-                caption_parts.append(f"🗣️ *Language:* {escape_markdown(languages_str)}")
-        else:
+                    lang = link.get('lang', '').strip()
+                    if lang: pack_langs.add(lang)
+            languages_str = ", ".join(sorted(list(pack_langs))) or "N/A"
+            caption_parts.append(f"🗣️ *Languages:* `{escape_markdown(languages_str)}`")
+
+        else: # সাধারণ কন্টেন্ট পোস্ট
+            caption_parts.append(f"🎬 *{escape_markdown(title)}*")
+            
+            details_lines = []
+            if release_date:
+                year = release_date.split('-')[0]
+                details_lines.append(f"🗓️ *Release:* `{escape_markdown(year)}`")
+            
+            if genres:
+                details_lines.append(f"🎭 *Genre:* `{escape_markdown(', '.join(genres))}`")
+
             languages = content.get('languages', [])
             if languages:
-                 escaped_langs = escape_markdown(", ".join(languages))
-                 caption_parts.append(f"🗣️ *Language:* {escaped_langs}")
+                 details_lines.append(f"🗣️ *Language:* `{escape_markdown(', '.join(languages))}`")
 
-        if rating and float(rating) > 0:
-            escaped_rating = escape_markdown(f"{rating:.1f}/10")
-            caption_parts.append(f"⭐ *Rating:* {escaped_rating}")
+            if rating and float(rating) > 0:
+                details_lines.append(f"⭐ *Rating:* `{escape_markdown(f'{rating:.1f}/10')}`")
+            
+            if details_lines:
+                caption_parts.append("\n".join(details_lines))
 
+        # --- ফুটার এবং ওয়েবসাইট লিঙ্ক ---
+        caption_parts.append('─' * 15) # Separator line
+        caption_parts.append("✅ *Watch or Download from our Website*")
+        
         caption = "\n\n".join(caption_parts)
 
         with app.app_context():
@@ -166,12 +178,16 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         
         keyboard = { "inline_keyboard": [[{"text": "🌐 Watch on Website", "url": website_link}]] }
 
+        # --- পোস্ট পাঠানো ---
+        payload = {}
+        api_method = "sendMessage"
         if poster_url:
+            api_method = "sendPhoto"
             payload = {'chat_id': PUBLIC_CHANNEL_ID, 'photo': poster_url, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
-            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
         else:
             payload = {'chat_id': PUBLIC_CHANNEL_ID, 'text': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
-            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
+
+        response = requests.post(f"{TELEGRAM_API_URL}/{api_method}", json=payload)
 
         if response.status_code == 200:
             print(f"SUCCESS: Successfully posted '{title}' (Type: {post_type}) to public channel.")
