@@ -408,8 +408,8 @@ detail_html = """
   .detail-meta span i { margin-right: 5px; color: var(--text-dark); }
   .detail-overview { font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px; }
   
-  .action-buttons-container { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
-  .action-btn { background-color: var(--netflix-red); color: white; padding: 12px 25px; font-size: 1rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease; justify-content: center; }
+  .action-buttons-container { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 30px; }
+  .action-btn { background-color: var(--netflix-red); color: white; padding: 15px 30px; font-size: 1.1rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease; justify-content: center; }
   .action-btn.download { background-color: #3b82f6; }
   .action-btn:hover { transform: scale(1.02); filter: brightness(1.1); }
 
@@ -483,26 +483,7 @@ detail_html = """
       </div>
       <p class="detail-overview">{{ movie.overview }}</p>
       
-      {% if movie.type == 'movie' and (movie.watch_links or movie.download_links) %}
-      <div class="action-buttons-container">
-          {% for link in movie.watch_links %}
-              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn">
-                  <i class="fas fa-play"></i> Watch ({{ link.lang }})
-              </a>
-          {% endfor %}
-          {% for link in movie.download_links %}
-              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn download">
-                  <i class="fas fa-download"></i> Download ({{ link.lang }})
-              </a>
-          {% endfor %}
-      </div>
-      {% endif %}
-
-      {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
-      {% if trailer_key %}<div class="trailer-section"><h3 class="section-title">Watch Trailer</h3><div class="video-container"><iframe src="https://www.youtube.com/embed/{{ trailer_key }}" frameborder="0" allowfullscreen></iframe></div></div>{% endif %}
-      <div style="margin: 20px 0;"><a href="{{ url_for('contact', report_id=movie._id, title=movie.title) }}" class="download-button" style="background-color:#5a5a5a; text-align:center;"><i class="fas fa-flag"></i> Report a Problem</a></div>
-      
-      <!-- অন্যান্য ভাষার সংস্করণ দেখানোর জন্য নতুন কোড -->
+      <!-- অন্যান্য ভাষার সংস্করণ (উপরে সরানো হয়েছে) -->
       {% if other_versions %}
       <div class="other-versions-section">
         <h3 class="section-title">Other Available Versions</h3>
@@ -528,7 +509,27 @@ detail_html = """
       </div>
       {% endif %}
       <!-- অন্যান্য ভাষার সংস্করণ দেখানো শেষ -->
+      
+      <!-- প্রধান অ্যাকশন বাটন (আপডেট করা হয়েছে) -->
+      {% if movie.type == 'movie' and (movie.watch_links or movie.download_links) %}
+      <div class="action-buttons-container">
+          {% for link in movie.watch_links %}
+              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn">
+                  <i class="fas fa-play"></i> Watch Now
+              </a>
+          {% endfor %}
+          {% for link in movie.download_links %}
+              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn download">
+                  <i class="fas fa-download"></i> Download Now
+              </a>
+          {% endfor %}
+      </div>
+      {% endif %}
 
+      {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
+      {% if trailer_key %}<div class="trailer-section"><h3 class="section-title">Watch Trailer</h3><div class="video-container"><iframe src="https://www.youtube.com/embed/{{ trailer_key }}" frameborder="0" allowfullscreen></iframe></div></div>{% endif %}
+      <div style="margin: 20px 0;"><a href="{{ url_for('contact', report_id=movie._id, title=movie.title) }}" class="download-button" style="background-color:#5a5a5a; text-align:center;"><i class="fas fa-flag"></i> Report a Problem</a></div>
+      
       {% if movie.is_coming_soon %}<h3 class="section-title">Coming Soon</h3>
       {% elif movie.type == 'movie' %}
         {% if movie.files %}<div class="download-section"><h3 class="section-title">Get from Telegram</h3>{% for file in movie.files | sort(attribute='quality') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ file.quality }}" class="action-btn" style="background-color: #2AABEE; display: block; text-align:center; margin-top:10px; margin-bottom: 0;"><i class="fa-brands fa-telegram"></i> Get {{ file.quality }}</a>{% endfor %}</div>{% endif %}
