@@ -107,7 +107,7 @@ def parse_links_from_string(link_string: str) -> list:
     return links
 
 # ======================================================================
-# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য (বিবরণ ছাড়া) ---
+# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য (SyntaxWarning মুক্ত) ---
 # ======================================================================
 def post_to_public_channel(content_id, post_type='content', season_num=None):
     if not PUBLIC_CHANNEL_ID or not WEBSITE_URL:
@@ -134,11 +134,14 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         # --- কন্টেন্টের ধরনের উপর ভিত্তি করে ডাইনামিক হেডার ---
         header_text = ""
         if post_type == 'season_pack' and season_num:
-            header_text = f"🔥 *New Season Pack Available\!* 🔥\n\n📺 *{escaped_title}* \- Season {season_num}"
+            # FIX: Changed \! to \\! and \- to \\- to avoid SyntaxWarning
+            header_text = f"🔥 *New Season Pack Available\\!* 🔥\n\n📺 *{escaped_title}* \\- Season {season_num}"
         elif content_type == 'series':
-            header_text = f"📺 *New Series Added\!* 📺\n\n🎬 *{escaped_title}*"
+            # FIX: Changed \! to \\!
+            header_text = f"📺 *New Series Added\\!* 📺\n\n🎬 *{escaped_title}*"
         else: # Movie
-            header_text = f"✨ *New Movie Added\!* ✨\n\n🎬 *{escaped_title}*"
+            # FIX: Changed \! to \\!
+            header_text = f"✨ *New Movie Added\\!* ✨\n\n🎬 *{escaped_title}*"
 
         # --- ক্যাপশনের বিভিন্ন অংশ তৈরি করা ---
         caption_parts = [header_text]
@@ -182,7 +185,8 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         caption = "\n\n".join(caption_parts)
         
         # বট এবং চ্যানেলের লিঙ্ক যোগ করা
-        caption += f"\n\n*Join for more updates and direct links\!*"
+        # FIX: Changed \! to \\!
+        caption += f"\n\n*Join for more updates and direct links\\!*"
 
         with app.app_context():
             website_link = f"{WEBSITE_URL.rstrip('/')}{url_for('movie_detail', movie_id=str(content_id))}"
