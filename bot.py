@@ -107,7 +107,7 @@ def parse_links_from_string(link_string: str) -> list:
     return links
 
 # ======================================================================
-# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য ---
+# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য (বিবরণ ছাড়া) ---
 # ======================================================================
 def post_to_public_channel(content_id, post_type='content', season_num=None):
     if not PUBLIC_CHANNEL_ID or not WEBSITE_URL:
@@ -120,26 +120,42 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
             print(f"ERROR: Could not find content with ID {content_id} to post.")
             return
 
+        # --- প্রয়োজনীয় তথ্য সংগ্রহ ---
         title = content.get('title', 'No Title')
         poster_url = content.get('poster')
         genres = content.get('genres', [])
         rating = content.get('vote_average')
         release_date = content.get('release_date')
+        content_type = content.get('type', 'movie') # 'movie' or 'series'
         
+        # --- MarkdownV2 এর জন্য টেক্সট Escape করা ---
         escaped_title = escape_markdown(title)
         
-        caption_parts = [f"🎬 *{escaped_title}*"]
+        # --- কন্টেন্টের ধরনের উপর ভিত্তি করে ডাইনামিক হেডার ---
+        header_text = ""
+        if post_type == 'season_pack' and season_num:
+            header_text = f"🔥 *New Season Pack Available\!* 🔥\n\n📺 *{escaped_title}* \- Season {season_num}"
+        elif content_type == 'series':
+            header_text = f"📺 *New Series Added\!* 📺\n\n🎬 *{escaped_title}*"
+        else: # Movie
+            header_text = f"✨ *New Movie Added\!* ✨\n\n🎬 *{escaped_title}*"
 
+        # --- ক্যাপশনের বিভিন্ন অংশ তৈরি করা ---
+        caption_parts = [header_text]
+        
+        # মেটা-ইনফো (Genre, Rating, Year, Language)
+        meta_info = []
         if release_date:
             year = release_date.split('-')[0]
-            caption_parts.append(f"🗓️ *Release Year:* {escape_markdown(year)}")
+            meta_info.append(f"🗓️ *Year:* {escape_markdown(year)}")
             
         if genres:
             escaped_genres = escape_markdown(", ".join(genres))
-            caption_parts.append(f"🎭 *Genre:* {escaped_genres}")
+            meta_info.append(f"🎭 *Genre:* {escaped_genres}")
 
+        # পোস্টের ধরনের উপর ভিত্তি করে ভাষা দেখানো
+        languages_str = ""
         if post_type == 'season_pack' and season_num:
-            caption_parts.insert(1, f"🔥 *Season {season_num} Pack Added*")
             pack = next((p for p in content.get('season_packs', []) if p['season'] == season_num), None)
             pack_langs = set()
             if pack:
@@ -147,29 +163,57 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
                     lang = link.get('lang', 'N/A').strip()
                     if lang and lang != 'N/A': pack_langs.add(lang)
             languages_str = ", ".join(sorted(list(pack_langs))) or "Not Specified"
-            if languages_str != "Not Specified":
-                caption_parts.append(f"🗣️ *Language:* {escape_markdown(languages_str)}")
         else:
             languages = content.get('languages', [])
             if languages:
-                 escaped_langs = escape_markdown(", ".join(languages))
-                 caption_parts.append(f"🗣️ *Language:* {escaped_langs}")
+                 languages_str = ", ".join(languages)
+        
+        if languages_str and languages_str != "Not Specified":
+            meta_info.append(f"🗣️ *Language:* {escape_markdown(languages_str)}")
 
         if rating and float(rating) > 0:
             escaped_rating = escape_markdown(f"{rating:.1f}/10")
-            caption_parts.append(f"⭐ *Rating:* {escaped_rating}")
+            meta_info.append(f"⭐ *Rating:* {escaped_rating} (TMDb)")
+        
+        if meta_info:
+            caption_parts.append("\n".join(meta_info))
 
+        # --- চূড়ান্ত ক্যাপশন এবং কিবোর্ড তৈরি করা ---
         caption = "\n\n".join(caption_parts)
+        
+        # বট এবং চ্যানেলের লিঙ্ক যোগ করা
+        caption += f"\n\n*Join for more updates and direct links\!*"
 
         with app.app_context():
             website_link = f"{WEBSITE_URL.rstrip('/')}{url_for('movie_detail', movie_id=str(content_id))}"
         
-        keyboard = { "inline_keyboard": [[{"text": "🌐 Watch on Website", "url": website_link}]] }
+        # ডাইনামিক বোতাম টেক্সট
+        main_button_text = "🍿 Watch Now on Website"
+        if post_type == 'season_pack':
+            main_button_text = "📥 Get Season Pack on Website"
 
+        keyboard_layout = [
+            [{"text": main_button_text, "url": website_link}]
+        ]
+        
+        # অতিরিক্ত বোতাম যোগ করা (যদি লিঙ্কগুলো Environment Variable এ থাকে)
+        extra_buttons = []
+        if MAIN_CHANNEL_LINK:
+            extra_buttons.append({"text": "💬 Main Channel", "url": MAIN_CHANNEL_LINK})
+        if UPDATE_CHANNEL_LINK:
+            extra_buttons.append({"text": "📣 Update Channel", "url": UPDATE_CHANNEL_LINK})
+        
+        if extra_buttons:
+            keyboard_layout.append(extra_buttons)
+
+        keyboard = {"inline_keyboard": keyboard_layout}
+
+        # --- টেলিগ্রামে পোস্ট পাঠানো ---
         if poster_url:
             payload = {'chat_id': PUBLIC_CHANNEL_ID, 'photo': poster_url, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
             response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
         else:
+            # ছবি ছাড়া পোস্টের জন্য, ক্যাপশনটি text হিসেবে যাবে
             payload = {'chat_id': PUBLIC_CHANNEL_ID, 'text': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
             response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
 
@@ -177,9 +221,12 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
             print(f"SUCCESS: Successfully posted '{title}' (Type: {post_type}) to public channel.")
         else:
             print(f"ERROR: Failed to post to public channel. Status: {response.status_code}, Response: {response.text}")
+            print(f"Failed Payload: {json.dumps(payload, indent=2)}")
 
     except Exception as e:
+        import traceback
         print(f"FATAL ERROR in post_to_public_channel: {e}")
+        traceback.print_exc()
 
 # ======================================================================
 # --- HTML টেমপ্লেট ---
