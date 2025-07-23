@@ -8,7 +8,6 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
 from datetime import datetime, timedelta, timezone
-from apscheduler.schedulers.background import BackgroundScheduler
 
 # ======================================================================
 # --- আপনার ব্যক্তিগত ও অ্যাডমিন তথ্য (এনভায়রনমেন্ট থেকে লোড হবে) ---
@@ -65,11 +64,17 @@ def requires_auth(f):
 try:
     client = MongoClient(MONGO_URI)
     db = client["movie_db"]
-    movies, settings, feedback = db["movies"], db["settings"], db["feedback"]
+    # movies, settings, feedback এর সাথে pending_posts কালেকশন যোগ করা হলো
+    movies, settings, feedback, pending_posts = db["movies"], db["settings"], db["feedback"], db["pending_posts"]
     print("SUCCESS: Successfully connected to MongoDB!")
 except Exception as e:
     print(f"FATAL: Error connecting to MongoDB: {e}. Exiting.")
     sys.exit(1)
+
+# ইন্ডেক্স তৈরি করা হচ্ছে যাতে pending_posts দ্রুত খুঁজে পাওয়া যায় এবং পুরনো সেশন অটোমেটিক ডিলেট হয়ে যায়
+# সেশন ১ ঘন্টা পর বাতিল হয়ে যাবে
+if "createdAt_1" not in pending_posts.index_information():
+    pending_posts.create_index("createdAt", expireAfterSeconds=3600)
 
 @app.context_processor
 def inject_global_vars():
@@ -155,7 +160,7 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
                  escaped_langs = escape_markdown(", ".join(languages))
                  caption_parts.append(f"🗣️ *Language:* {escaped_langs}")
 
-        if rating and float(rating) > 0:
+        if rating and isinstance(rating, (int, float)) and float(rating) > 0:
             escaped_rating = escape_markdown(f"{rating:.1f}/10")
             caption_parts.append(f"⭐ *Rating:* {escaped_rating}")
 
@@ -824,13 +829,13 @@ def process_movie_list(movie_list):
 # ======================================================================
 # --- Main Flask Routes ---
 # ======================================================================
-
 @app.route('/')
 def home():
     query = request.args.get('q')
     if query:
         movies_list = list(movies.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
         return render_template_string(index_html, movies=process_movie_list(movies_list), query=f'Results for "{query}"', is_full_page_list=True)
+    
     all_badges = sorted([badge for badge in movies.distinct("poster_badge") if badge and badge.strip()])
     limit = 12
     context = {
@@ -851,6 +856,13 @@ def movie_detail(movie_id):
         movies.update_one({"_id": obj_id}, {"$inc": {"view_count": 1}})
         movie = movies.find_one({"_id": obj_id})
         if not movie: return "Content not found", 404
+        
+        # Make sure vote_average is a number before formatting
+        if movie.get('vote_average') and isinstance(movie['vote_average'], (int, float)):
+             movie['vote_average'] = float(movie['vote_average'])
+        else:
+             movie['vote_average'] = 0.0
+
         related_movies = []
         if movie.get("genres"):
             related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": obj_id}}).limit(12))
@@ -929,7 +941,6 @@ def admin():
     feedback_list = process_movie_list(list(feedback.find().sort('timestamp', -1)))
     return render_template_string(admin_html, content_list=content_list, feedback_list=feedback_list, search_query=search_query)
 
-
 @app.route('/admin/save_ads', methods=['POST'])
 @requires_auth
 def save_ads():
@@ -979,7 +990,6 @@ def edit_movie(movie_id):
 
     return render_template_string(edit_html, movie=movie_obj)
 
-
 @app.route('/delete_movie/<movie_id>')
 @requires_auth
 def delete_movie(movie_id):
@@ -1015,22 +1025,15 @@ def delete_feedback(feedback_id):
     feedback.delete_one({"_id": ObjectId(feedback_id)})
     return redirect(url_for('admin'))
 
-
 # ======================================================================
 # --- নতুন Helper ফাংশন: সিরিজ খুঁজে বের করা বা তৈরি করা ---
 # ======================================================================
 def find_or_create_series(user_title, year, badge, chat_id):
-    """
-    ডাটাবেজে সিরিজ খুঁজে বের করে। না পেলে TMDb থেকে তথ্য নিয়ে নতুন সিরিজ তৈরি করে।
-    Returns the series document or None if creation fails.
-    """
-    # প্রথমে ডাটাবেজে সিরিজটি খোঁজা হবে
     series = movies.find_one({"title": {"$regex": f"^{re.escape(user_title)}$", "$options": "i"}, "type": "series"})
     if series:
         print(f"INFO: Found existing series '{user_title}' in DB.")
         return series
 
-    # যদি সিরিজটি ডাটাবেজে না থাকে
     print(f"INFO: Series '{user_title}' not in DB. Creating new entry.")
     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Series page for `{user_title}` not found. Creating it now...", 'parse_mode': 'Markdown'})
     
@@ -1060,19 +1063,18 @@ def find_or_create_series(user_title, year, badge, chat_id):
         print(f"SUCCESS: Created new series '{user_title}' and posted to channel.")
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully created series page for `{user_title}`.", 'parse_mode': 'Markdown'})
     
-    # সর্বশেষ আপডেটেড ডকুমেন্টটি ডাটাবেজ থেকে আবার আনা হচ্ছে
     return movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"})
 
 
 # ======================================================================
-# --- Webhook Route (FINAL VERSION) ---
+# --- Webhook Route (FINAL UPDATED VERSION) ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
 
     if 'channel_post' in data:
-        pass # চ্যানেল পোস্ট এখানে হ্যান্ডেল করা হয় না
+        pass
 
     elif 'message' in data:
         message = data['message']
@@ -1118,53 +1120,150 @@ def telegram_webhook():
             
             return jsonify(status='ok')
 
-        # --- Admin-only commands ---
+        # --- শুধুমাত্র অ্যাডমিনদের জন্য কমান্ড ---
         if str(chat_id) not in ADMIN_USER_IDS:
             return jsonify(status='ok')
-        
-        # --- /add command (for Movies) ---
-        if text.startswith('/add '):
+
+        # --- নতুন: /cancel command to abort an interactive session ---
+        if text == '/cancel':
+            deleted_count = pending_posts.delete_many({'admin_id': str(chat_id)}).deleted_count
+            if deleted_count > 0:
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "✅ Operation cancelled."})
+            else:
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "🤷‍♀️ Nothing to cancel. You are not in the middle of any operation."})
+            return jsonify(status='ok')
+
+        # --- নতুন: ইন্টারেক্টিভ সেশন হ্যান্ডেল করা ---
+        pending_session = pending_posts.find_one({'admin_id': str(chat_id)})
+        if pending_session:
             try:
-                parts = text.split('/add ', 1)[1].split('|')
-                if len(parts) != 3: raise ValueError("Incorrect format")
-                title_part, watch_links_str, download_links_str = [p.strip() for p in parts]
-                
-                lang_match = re.search(r'\[(.*?)\]', title_part)
-                badge = lang_match.group(1).strip() if lang_match else None
-                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+                if pending_session['step'] == 'awaiting_movie_links':
+                    parts = text.split('|', 1)
+                    watch_links_str = parts[0].strip()
+                    download_links_str = parts[1].strip() if len(parts) > 1 else ""
 
-                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
-                year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+                    movie_doc = pending_session['data']
+                    movie_doc['watch_links'] = parse_links_from_string(watch_links_str)
+                    movie_doc['download_links'] = parse_links_from_string(download_links_str)
+                    movie_doc['created_at'] = datetime.now(timezone.utc)
+                    
+                    result = movies.update_one(
+                        {"tmdb_id": movie_doc["tmdb_id"], "type": "movie"}, 
+                        {"$set": movie_doc}, 
+                        upsert=True
+                    )
+                    
+                    content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": movie_doc["tmdb_id"]})['_id']
+                    
+                    post_to_public_channel(content_id_to_post, post_type='content')
+                    
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added/updated `{movie_doc['title']}` and posted to the channel!", 'parse_mode': 'Markdown'})
+                    
+                    pending_posts.delete_one({'_id': pending_session['_id']})
 
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Searching for `{user_title}`...", 'parse_mode': 'Markdown'})
-                tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
-                
-                if not tmdb_data:
-                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Sorry, could not find any movie named '{user_title}'."})
-                    return jsonify(status='ok')
-                
-                final_languages = [badge.title()] if badge else tmdb_data.get('languages', [])
-
-                tmdb_data.pop('tmdb_title', None)
-                movie_doc = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
-                
-                result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
-                
-                content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})['_id']
-                post_to_public_channel(content_id_to_post, post_type='content')
-                
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added/updated `{user_title}` to the website.", 'parse_mode': 'Markdown'})
             except Exception as e:
-                print(f"Error in /add command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/add` for help."})
-        
-        elif text == '/add':
-            reply_text = (f"👇 Use the format below to add a movie:\n\n"
-                          f"`/add Movie Name (Year) [Language] | Watch Links | Download Links`\n\n"
-                          f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*")
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+                print(f"Error processing pending session: {e}")
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ An error occurred. Please try again. Use `/cancel` to start over."})
+            
+            return jsonify(status='ok')
 
-        # --- নতুন: /addep command (for Series Episodes) ---
+        # --- /add command (ইন্টারেক্টিভ ও পুরনো উভয় মোড হ্যান্ডেল করে) ---
+        if text.startswith('/add '):
+            command_body = text.split('/add ', 1)[1]
+            
+            if '|' in command_body:
+                try:
+                    parts = command_body.split('|')
+                    if len(parts) != 3: raise ValueError("Incorrect legacy format")
+                    title_part, watch_links_str, download_links_str = [p.strip() for p in parts]
+                    
+                    lang_match = re.search(r'\[(.*?)\]', title_part)
+                    badge = lang_match.group(1).strip() if lang_match else None
+                    title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+
+                    year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
+                    year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Adding `{user_title}` using legacy mode...", 'parse_mode': 'Markdown'})
+                    tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
+                    
+                    if not tmdb_data:
+                        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ TMDb search failed for '{user_title}'."})
+                        return jsonify(status='ok')
+                    
+                    final_languages = [badge.title()] if badge else tmdb_data.get('languages', [])
+                    tmdb_data.pop('tmdb_title', None)
+                    movie_doc = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
+                    
+                    result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"]}, {"$set": movie_doc}, upsert=True)
+                    content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"]})['_id']
+                    post_to_public_channel(content_id_to_post, post_type='content')
+                    
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added `{user_title}`.", 'parse_mode': 'Markdown'})
+                except Exception as e:
+                    print(f"Error in legacy /add command: {e}")
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong legacy format! Use `/add` for help."})
+                return jsonify(status='ok')
+
+            else:
+                try:
+                    title_part = command_body.strip()
+                    lang_match = re.search(r'\[(.*?)\]', title_part)
+                    badge = lang_match.group(1).strip() if lang_match else None
+                    title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+
+                    year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
+                    year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Searching TMDb for `{user_title}`...", 'parse_mode': 'Markdown'})
+                    tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
+
+                    if not tmdb_data:
+                        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ TMDb search failed for '{user_title}'. Please check the name and year."})
+                        return jsonify(status='ok')
+
+                    final_languages = [badge.title()] if badge else tmdb_data.get('languages', [])
+                    tmdb_data.pop('tmdb_title', None)
+                    movie_doc_for_session = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge}
+                    
+                    pending_posts.update_one(
+                        {'admin_id': str(chat_id)},
+                        {'$set': {
+                            'step': 'awaiting_movie_links',
+                            'data': movie_doc_for_session,
+                            'createdAt': datetime.now(timezone.utc)
+                        }},
+                        upsert=True
+                    )
+
+                    caption = (
+                        f"🎬 *{escape_markdown(user_title)}*\n\n"
+                        f"Found details from TMDb\\. Please reply with the links in the following format:\n\n"
+                        f"`Watch Links | Download Links`\n\n"
+                        f"*Example:*\n`Hindi: https://url | 480p: https://url, 720p: https://url`\n\n"
+                        f"To abort, send /cancel\\."
+                    )
+                    
+                    if tmdb_data.get('poster'):
+                        requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json={'chat_id': chat_id, 'photo': tmdb_data['poster'], 'caption': caption, 'parse_mode': 'MarkdownV2'})
+                    else:
+                        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': caption, 'parse_mode': 'MarkdownV2'})
+
+                except Exception as e:
+                    print(f"Error in interactive /add command: {e}")
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ An error occurred. Please use `/add Movie Name (Year)`."})
+
+        elif text == '/add':
+            reply_text = (
+                "👇 Choose a method to add a movie:\n\n"
+                "1️⃣ *Interactive Mode (Recommended)*\n"
+                "Send: `/add Movie Name (Year)`\n"
+                "_The bot will then ask you for the links._\n\n"
+                "2️⃣ *Classic Mode (One-Liner)*\n"
+                "Send: `/add Movie Name (Year) [Lang] | Watch Links | Download Links`"
+            )
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+        
         elif text.startswith('/addep '):
             try:
                 parts = text.split('/addep ', 1)[1].split('|')
@@ -1182,21 +1281,17 @@ def telegram_webhook():
                 if not se_match: raise ValueError("Invalid S/E format. Use S01E01.")
                 season_num, episode_num = int(se_match.group(1)), int(se_match.group(2))
 
-                # সিরিজ খুঁজে বের করা বা তৈরি করা
                 series = find_or_create_series(user_title, year, badge, chat_id)
                 if not series:
-                    return jsonify(status='ok') # Helper function already sent an error message
+                    return jsonify(status='ok') 
 
                 series_id = series['_id']
                 new_episode = {
-                    "season": season_num, 
-                    "episode_number": episode_num, 
-                    "title": f"Episode {episode_num}", 
+                    "season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", 
                     "watch_links": parse_links_from_string(watch_links_str), 
                     "download_links": parse_links_from_string(download_links_str), 
                     "message_id": None
                 }
-                # পুরোনো এপিসোড থাকলে ডিলেট করে নতুনটা যোগ করা
                 movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
                 movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
                 
@@ -1210,7 +1305,6 @@ def telegram_webhook():
                           f"`/addep Series Name (Year) [Language] | S01E01 | Watch Links | Download Links`")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
-        # --- নতুন: /addpack command (for Season Packs) ---
         elif text.startswith('/addpack '):
             try:
                 parts = text.split('/addpack ', 1)[1].split('|')
@@ -1228,7 +1322,6 @@ def telegram_webhook():
                 if not se_match: raise ValueError("Invalid season format. Use S01.")
                 season_num = int(se_match.group(1))
 
-                # সিরিজ খুঁজে বের করা বা তৈরি করা
                 series = find_or_create_series(user_title, year, badge, chat_id)
                 if not series:
                     return jsonify(status='ok')
@@ -1240,7 +1333,6 @@ def telegram_webhook():
                     "message_id": None
                 }
                 
-                # পুরোনো প্যাক থাকলে ডিলেট করে নতুনটা যোগ করা
                 movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
                 movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
                 
@@ -1260,4 +1352,5 @@ def telegram_webhook():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    # debug=False is important for production
     app.run(host='0.0.0.0', port=port, debug=False)
