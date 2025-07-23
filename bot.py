@@ -124,9 +124,12 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
                 for link in pack.get('watch_links', []) + pack.get('download_links', []):
                     lang = link.get('lang', 'N/A').strip()
                     if lang and lang != 'N/A': pack_langs.add(lang)
-            languages_str = ", ".join(sorted(list(pack_langs))) or "Not Specified"
-            if languages_str != "Not Specified":
-                caption_parts.append(f"🗣️ *Language:* {escape_markdown(languages_str)}")
+            # Use main content language if pack languages are not specific
+            main_languages = content.get('languages', [])
+            if main_languages:
+                escaped_langs = escape_markdown(", ".join(main_languages))
+                caption_parts.append(f"🗣️ *Language:* {escaped_langs}")
+
         else:
             languages = content.get('languages', [])
             if languages:
@@ -754,12 +757,16 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
             detail_res.raise_for_status()
             res_json = detail_res.json()
             trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
-            language_names = [lang['english_name'] for lang in res_json.get('spoken_languages', [])]
+            
+            # **MODIFICATION: We no longer fetch languages from here.**
+            # language_names = [lang['english_name'] for lang in res_json.get('spoken_languages', [])]
+            
             return {
                 "tmdb_id": tmdb_id, "tmdb_title": res_json.get("title") or res_json.get("name"),
                 "poster": f"https://image.tmdb.org/t/p/w500{res_json.get('poster_path')}" if res_json.get('poster_path') else None, 
                 "overview": res_json.get("overview"), "release_date": res_json.get("release_date") or res_json.get("first_air_date"), 
-                "genres": [g['name'] for g in res_json.get("genres", [])], "languages": language_names,
+                "genres": [g['name'] for g in res_json.get("genres", [])],
+                # "languages" key removed from here. It will be handled by our command parser.
                 "vote_average": res_json.get("vote_average"), "trailer_key": trailer_key
             }
         except requests.RequestException as e:
@@ -774,6 +781,7 @@ def process_movie_list(movie_list):
     return [{**item, '_id': str(item['_id'])} for item in movie_list]
 
 def find_or_create_series(user_title, year, badge, chat_id):
+    # **MODIFIED FUNCTION**
     series = movies.find_one({"title": {"$regex": f"^{re.escape(user_title)}$", "$options": "i"}, "type": "series"})
     if series:
         print(f"INFO: Found existing series '{user_title}' in DB.")
@@ -787,25 +795,36 @@ def find_or_create_series(user_title, year, badge, chat_id):
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ TMDb search failed for '{user_title}'. Cannot create series."})
         return None
 
-    final_languages = [badge.title()] if badge else tmdb_data.get('languages', [])
+    # **MODIFIED LANGUAGE LOGIC**
+    # The language will only be the one provided in the command (via the badge).
+    final_languages = [badge.title()] if badge else []
     
     tmdb_data.pop('tmdb_title', None)
     series_doc = {
         **tmdb_data,
-        "title": user_title, "type": "series", "languages": final_languages, "poster_badge": badge,
-        "episodes": [], "season_packs": [], "created_at": datetime.now(timezone.utc)
+        "title": user_title, 
+        "type": "series", 
+        "languages": final_languages, # Set the language based on user input only
+        "poster_badge": badge,
+        "episodes": [], 
+        "season_packs": [], 
+        "created_at": datetime.now(timezone.utc)
     }
     
-    result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"}, {"$set": series_doc}, upsert=True)
+    result = movies.update_one(
+        {"tmdb_id": tmdb_data.get("tmdb_id"), "type": "series"}, 
+        {"$set": series_doc}, 
+        upsert=True
+    )
     
-    if result.upserted_id:
-        post_to_public_channel(result.upserted_id, post_type='content')
+    new_series_id = result.upserted_id
+    if new_series_id:
+        post_to_public_channel(new_series_id, post_type='content')
         print(f"SUCCESS: Created new series '{user_title}' and posted to channel.")
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully created series page for `{user_title}`.", 'parse_mode': 'Markdown'})
     
-    # Use the upserted_id if it exists, otherwise find the document again to return it
-    new_series_id = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"})['_id']
-    return movies.find_one({"_id": new_series_id})
+    # Return the newly created or found document
+    return movies.find_one({"tmdb_id": tmdb_data.get("tmdb_id"), "type": "series"})
 
 
 # ======================================================================
@@ -1149,12 +1168,17 @@ def telegram_webhook():
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ TMDb search failed for '{user_title}'. Please check the name and year."})
                 return jsonify(status='ok')
 
-            final_languages = tmdb_data.get('languages', [])
-            if badge and badge.title() not in final_languages:
-                final_languages.insert(0, badge.title())
-                
+            # **MODIFIED LANGUAGE LOGIC**
+            final_languages = [badge.title()] if badge else []
             tmdb_data.pop('tmdb_title', None)
-            movie_doc_for_session = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge}
+            
+            movie_doc_for_session = {
+                **tmdb_data, 
+                "title": user_title, 
+                "type": "movie", 
+                "languages": final_languages, # Set language from user input
+                "poster_badge": badge
+            }
             
             pending_posts.update_one(
                 {'admin_id': str(chat_id)},
@@ -1192,7 +1216,7 @@ def telegram_webhook():
         )
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
     
-    # ** NEW/FIXED LOGIC FOR /addpack **
+    # ** MODIFIED LOGIC FOR /addpack **
     elif text.startswith('/addpack '):
         try:
             command_body = text.split('/addpack ', 1)[1]
@@ -1201,10 +1225,10 @@ def telegram_webhook():
             if len(parts) < 2:
                 raise ValueError("Invalid format. Missing title or season number.")
 
-            # Part 1: Title
+            # Part 1: Title & Language
             title_part = parts[0]
             lang_match = re.search(r'\[(.*?)\]', title_part)
-            badge = lang_match.group(1).strip() if lang_match else None
+            badge = lang_match.group(1).strip() if lang_match else None # Badge is our language
             title_part_cleaned = re.sub(r'\s*\[.*?\]\s*$', '', title_part).strip()
             year_match = re.search(r'\s*\((\d{4})\)$', title_part_cleaned)
             year, user_title = (year_match.group(1), title_part_cleaned[:year_match.start()].strip()) if year_match else (None, title_part_cleaned)
@@ -1244,7 +1268,6 @@ def telegram_webhook():
                 {'$push': {'season_packs': pack_data}}
             )
 
-            # Post update to public channel
             post_to_public_channel(series['_id'], post_type='season_pack', season_num=season_num)
 
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{user_title}`.", 'parse_mode': 'Markdown'})
@@ -1253,19 +1276,16 @@ def telegram_webhook():
             print(f"Error in /addpack command: {e}")
             reply_text = (
                 "❌ Error processing command. Use the format:\n\n"
-                "`/addpack Series Name (Year) | S<Num> | [Watch URL(s)] | [Download URL(s)] | [Msg ID]`\n\n"
+                "`/addpack Series Name (Year) [Lang] | S<Num> | [Watch URL] | [Download URL] | [Msg ID]`\n\n"
                 "*Example:*\n"
-                "`/addpack Panchayat (2024) | S03 | https://... | https://... | 12345`\n"
+                "`/addpack Panchayat (2024) [Hindi] | S03 | https://... | - | 12345`\n"
                 "Use `-` for empty fields."
             )
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
 
     elif text.startswith('/addep '):
-        # This part remains for individual episodes if you need it.
-        # You can implement logic similar to /addpack here.
-        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "`/addep` command is not fully implemented yet."})
-        pass
+        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "`/addep` command is not implemented. Use `/addpack` for season packs."})
 
     return jsonify(status='ok')
 
