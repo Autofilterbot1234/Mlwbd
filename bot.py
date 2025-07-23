@@ -803,7 +803,9 @@ def find_or_create_series(user_title, year, badge, chat_id):
         print(f"SUCCESS: Created new series '{user_title}' and posted to channel.")
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully created series page for `{user_title}`.", 'parse_mode': 'Markdown'})
     
-    return movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"})
+    # Use the upserted_id if it exists, otherwise find the document again to return it
+    new_series_id = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"})['_id']
+    return movies.find_one({"_id": new_series_id})
 
 
 # ======================================================================
@@ -897,25 +899,32 @@ def admin():
         tmdb_data.pop('tmdb_title', None)
         doc_data.update(tmdb_data)
 
-        if content_type == "movie":
-            # This is a different parse_links_from_string for the admin panel
-            def admin_parse_links(link_str):
-                if not link_str: return []
-                links = []
-                for part in link_str.split(','):
-                    if ':' in part:
-                        lang, url = part.split(':', 1)
-                        links.append({'lang': lang.strip(), 'url': url.strip()})
-                    else:
-                        links.append({'lang': 'Link', 'url': part.strip()})
-                return links
+        def admin_parse_links(link_str):
+            if not link_str: return []
+            links = []
+            for part in link_str.split(','):
+                if ':' in part:
+                    lang, url = part.split(':', 1)
+                    links.append({'lang': lang.strip(), 'url': url.strip()})
+                else:
+                    links.append({'lang': 'Link', 'url': part.strip()})
+            return links
 
+        if content_type == "movie":
             doc_data['watch_links'] = admin_parse_links(request.form.get('watch_links_str'))
             doc_data['download_links'] = admin_parse_links(request.form.get('download_links_str'))
             doc_data['files'] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
         else: # Series
-            # Similar parsing needed here if you have complex links in admin panel for series
-            pass # Keep your existing logic
+            # This is for manual series creation. We will just add episodes.
+            episodes = []
+            for s, n, t, wl, dl, mid in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]')):
+                if not n: continue
+                episodes.append({
+                    "season": int(s), "episode_number": int(n), "title": t,
+                    "watch_links": admin_parse_links(wl), "download_links": admin_parse_links(dl),
+                    "message_id": int(mid) if mid else None
+                })
+            doc_data['episodes'] = episodes
         
         result = movies.insert_one(doc_data)
         if result.inserted_id:
@@ -960,11 +969,15 @@ def edit_movie(movie_id):
             if not link_str: return []
             links = []
             for part in link_str.split(','):
+                part = part.strip()
                 if ':' in part:
-                    lang, url = part.split(':', 1)
-                    links.append({'lang': lang.strip(), 'url': url.strip()})
+                    try:
+                        lang, url = part.split(':', 1)
+                        links.append({'lang': lang.strip(), 'url': url.strip()})
+                    except ValueError:
+                        links.append({'lang': 'Link', 'url': part}) # Handle cases with extra colons
                 else:
-                    links.append({'lang': 'Link', 'url': part.strip()})
+                    links.append({'lang': 'Link', 'url': part})
             return links
         
         if content_type == "movie":
@@ -973,12 +986,49 @@ def edit_movie(movie_id):
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
         else: # Series
-            # ... your existing logic for series in admin panel
-            pass
-        
+            # **FIXED LOGIC FOR SERIES**
+            # Process Season Packs
+            season_packs = []
+            pack_seasons = request.form.getlist('pack_season[]')
+            pack_watch_links = request.form.getlist('pack_watch_links_str[]')
+            pack_download_links = request.form.getlist('pack_download_links_str[]')
+            pack_message_ids = request.form.getlist('pack_message_id[]')
+            for i in range(len(pack_seasons)):
+                if not pack_seasons[i]: continue
+                season_packs.append({
+                    "season": int(pack_seasons[i]),
+                    "watch_links": admin_parse_links(pack_watch_links[i]),
+                    "download_links": admin_parse_links(pack_download_links[i]),
+                    "message_id": int(pack_message_ids[i]) if pack_message_ids[i] else None
+                })
+            update_data["season_packs"] = season_packs
+
+            # Process Individual Episodes
+            episodes = []
+            ep_seasons = request.form.getlist('episode_season[]')
+            ep_numbers = request.form.getlist('episode_number[]')
+            ep_titles = request.form.getlist('episode_title[]')
+            ep_watch_links = request.form.getlist('episode_watch_links_str[]')
+            ep_download_links = request.form.getlist('episode_download_links_str[]')
+            ep_message_ids = request.form.getlist('episode_message_id[]')
+            for i in range(len(ep_numbers)):
+                if not ep_numbers[i]: continue
+                episodes.append({
+                    "season": int(ep_seasons[i]),
+                    "episode_number": int(ep_numbers[i]),
+                    "title": ep_titles[i],
+                    "watch_links": admin_parse_links(ep_watch_links[i]),
+                    "download_links": admin_parse_links(ep_download_links[i]),
+                    "message_id": int(ep_message_ids[i]) if ep_message_ids[i] else None
+                })
+            update_data["episodes"] = episodes
+            
+            movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"files": "", "watch_links": "", "download_links": ""}})
+
         return redirect(url_for('admin'))
 
     return render_template_string(edit_html, movie=movie_obj)
+
 
 @app.route('/delete_movie/<movie_id>')
 @requires_auth
@@ -1142,9 +1192,79 @@ def telegram_webhook():
         )
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
     
-    elif text.startswith(('/addep ', '/addpack ')):
-        # Series commands can be handled here as before
-        # ...
+    # ** NEW/FIXED LOGIC FOR /addpack **
+    elif text.startswith('/addpack '):
+        try:
+            command_body = text.split('/addpack ', 1)[1]
+            parts = [p.strip() for p in command_body.split('|')]
+            
+            if len(parts) < 2:
+                raise ValueError("Invalid format. Missing title or season number.")
+
+            # Part 1: Title
+            title_part = parts[0]
+            lang_match = re.search(r'\[(.*?)\]', title_part)
+            badge = lang_match.group(1).strip() if lang_match else None
+            title_part_cleaned = re.sub(r'\s*\[.*?\]\s*$', '', title_part).strip()
+            year_match = re.search(r'\s*\((\d{4})\)$', title_part_cleaned)
+            year, user_title = (year_match.group(1), title_part_cleaned[:year_match.start()].strip()) if year_match else (None, title_part_cleaned)
+
+            # Part 2: Season Number
+            season_str = parts[1].upper()
+            season_num_match = re.search(r'S(\d+)', season_str)
+            if not season_num_match:
+                raise ValueError("Invalid Season format. Use S01, S02 etc.")
+            season_num = int(season_num_match.group(1))
+
+            # Part 3-5: Links and Message ID (Optional)
+            watch_links_str = parts[2] if len(parts) > 2 else '-'
+            download_links_str = parts[3] if len(parts) > 3 else '-'
+            message_id_str = parts[4] if len(parts) > 4 else None
+
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Finding series `{user_title}`...", 'parse_mode': 'Markdown'})
+            
+            series = find_or_create_series(user_title, year, badge, chat_id)
+            if not series:
+                return jsonify(status='ok')
+
+            pack_data = {
+                "season": season_num,
+                "watch_links": parse_simple_links(watch_links_str, "Watch"),
+                "download_links": parse_simple_links(download_links_str, "Download"),
+                "message_id": int(message_id_str) if message_id_str and message_id_str.isdigit() else None
+            }
+
+            # Atomically remove old pack and add new one
+            movies.update_one(
+                {'_id': series['_id']},
+                {'$pull': {'season_packs': {'season': season_num}}}
+            )
+            movies.update_one(
+                {'_id': series['_id']},
+                {'$push': {'season_packs': pack_data}}
+            )
+
+            # Post update to public channel
+            post_to_public_channel(series['_id'], post_type='season_pack', season_num=season_num)
+
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{user_title}`.", 'parse_mode': 'Markdown'})
+
+        except Exception as e:
+            print(f"Error in /addpack command: {e}")
+            reply_text = (
+                "❌ Error processing command. Use the format:\n\n"
+                "`/addpack Series Name (Year) | S<Num> | [Watch URL(s)] | [Download URL(s)] | [Msg ID]`\n\n"
+                "*Example:*\n"
+                "`/addpack Panchayat (2024) | S03 | https://... | https://... | 12345`\n"
+                "Use `-` for empty fields."
+            )
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+
+
+    elif text.startswith('/addep '):
+        # This part remains for individual episodes if you need it.
+        # You can implement logic similar to /addpack here.
+        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "`/addep` command is not fully implemented yet."})
         pass
 
     return jsonify(status='ok')
