@@ -666,7 +666,7 @@ go_link_html = """
         const countdownElement = document.getElementById('countdown');
         const linkButton = document.getElementById('link-btn');
         const destinationUrl = "{{ destination_url | safe }}";
-        let seconds = 10;
+        let seconds = 5;
 
         const interval = setInterval(() => {
             seconds--;
