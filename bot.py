@@ -303,7 +303,7 @@ index_html = """
   {% else %}
     {% if all_badges %}<div class="tags-section"><div class="tags-container">{% for badge in all_badges %}<a href="{{ url_for('movies_by_badge', badge_name=badge) }}" class="tag-link">{{ badge }}</a>{% endfor %}</div></div>{% endif %}
     
-    {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_links and movie.watch_links[0] and not movie.is_coming_soon %}<a href="{{ movie.watch_links[0].url }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
+    {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_links and movie.watch_links[0] and not movie.is_coming_soon %}<a href="{{ url_for('go_to_link', url=movie.watch_links[0].url) }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
 
     {% macro render_grid_section(title, movies_list, endpoint) %}
         {% if movies_list %}
@@ -467,12 +467,12 @@ detail_html = """
       {% if movie.type == 'movie' and (movie.watch_links or movie.download_links) %}
       <div class="action-buttons-container">
           {% for link in movie.watch_links %}
-              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn">
+              <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" rel="noopener" class="action-btn">
                   <i class="fas fa-play"></i> Watch Now
               </a>
           {% endfor %}
           {% for link in movie.download_links %}
-              <a href="{{ link.url }}" target="_blank" rel="noopener" class="action-btn download">
+              <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" rel="noopener" class="action-btn download">
                   <i class="fas fa-download"></i> Download Now
               </a>
           {% endfor %}
@@ -495,10 +495,10 @@ detail_html = """
                 <span class="episode-title">Complete Season {{ pack.season }} Pack</span>
                 <div class="episode-buttons" style="width: 100%;">
                     {% for link in pack.watch_links %}
-                    <a href="{{ link.url }}" target="_blank" class="episode-button" style="flex-grow:1; justify-content:center;"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
+                    <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" class="episode-button" style="flex-grow:1; justify-content:center;"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
                     {% endfor %}
                     {% for link in pack.download_links %}
-                    <a href="{{ link.url }}" target="_blank" class="episode-button download" style="flex-grow:1; justify-content:center;"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
+                    <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" class="episode-button download" style="flex-grow:1; justify-content:center;"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
                     {% endfor %}
                     {% if pack.message_id %}
                     <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}" class="episode-button telegram" style="flex-grow:1; justify-content:center;"><i class="fa-brands fa-telegram"></i> Get Pack</a>
@@ -513,10 +513,10 @@ detail_html = """
                 <span class="episode-title">S{{ "%02d"|format(ep.season) }}E{{ "%02d"|format(ep.episode_number) }}: {{ ep.title or 'Episode ' + ep.episode_number|string }}</span>
                 <div class="episode-buttons">
                     {% for link in ep.watch_links %}
-                      <a href="{{ link.url }}" target="_blank" class="episode-button"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
+                      <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" class="episode-button"><i class="fas fa-play"></i> Watch ({{link.lang}})</a>
                     {% endfor %}
                     {% for link in ep.download_links %}
-                      <a href="{{ link.url }}" target="_blank" class="episode-button download"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
+                      <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" class="episode-button download"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
                     {% endfor %}
                     {% if ep.message_id %}
                       <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get</a>
@@ -564,14 +564,136 @@ genres_html = """
 </body></html>
 """
 
-watch_html = """
+# --- নতুন টেমপ্লেট: লিংক পেজের জন্য ---
+go_link_html = """
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Watching: {{ title }}</title>
-<style> body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #000; } .player-container { width: 100%; height: 100%; } .player-container iframe { width: 100%; height: 100%; border: 0; } </style></head>
-<body><div class="player-container"><iframe src="{{ watch_link }}" allowfullscreen allowtransparency allow="autoplay" scrolling="no" frameborder="0"></iframe></div>
-{% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
-{% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
-</body></html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redirecting... - MovieZone</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+        :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --dark-gray: #222; }
+        body, html {
+            height: 100%;
+            margin: 0;
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--netflix-black);
+            color: var(--text-light);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            overflow: hidden;
+        }
+        .container {
+            max-width: 90%;
+            width: 700px;
+            padding: 30px;
+            background-color: var(--dark-gray);
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        h2 {
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            color: var(--text-light);
+        }
+        p {
+            font-size: 1.1rem;
+            margin-bottom: 25px;
+        }
+        .timer {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--netflix-red);
+            margin-bottom: 25px;
+        }
+        .link-button {
+            display: inline-block;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: white;
+            background-color: #555;
+            text-decoration: none;
+            border-radius: 5px;
+            cursor: not-allowed;
+            transition: background-color 0.3s, transform 0.2s;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+        .link-button.enabled {
+            background-color: var(--netflix-red);
+            cursor: pointer;
+            pointer-events: auto;
+            opacity: 1;
+        }
+        .link-button.enabled:hover {
+            transform: scale(1.05);
+            background-color: #b00710;
+        }
+        .ad-placeholder {
+            margin: 20px auto;
+            min-height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Please Wait...</h2>
+        <p>Your link is being prepared.</p>
+        
+        <div class="ad-placeholder" id="ad-slot-1">
+             {% if ad_settings.link_page_ad_1 %}{{ ad_settings.link_page_ad_1|safe }}{% endif %}
+        </div>
+        
+        <p>Your download will start in:</p>
+        <div class="timer" id="countdown">10</div>
+        
+        <a id="link-btn" href="#" class="link-button" rel="noopener noreferrer">Generating Link...</a>
+
+        <div class="ad-placeholder" id="ad-slot-2">
+             {% if ad_settings.link_page_ad_2 %}{{ ad_settings.link_page_ad_2|safe }}{% endif %}
+        </div>
+    </div>
+
+    <script>
+        const countdownElement = document.getElementById('countdown');
+        const linkButton = document.getElementById('link-btn');
+        const destinationUrl = "{{ destination_url | safe }}";
+        let seconds = 10;
+
+        const interval = setInterval(() => {
+            seconds--;
+            countdownElement.textContent = seconds;
+
+            if (seconds <= 0) {
+                clearInterval(interval);
+                countdownElement.style.display = 'none';
+                linkButton.textContent = 'Go to Link';
+                linkButton.classList.add('enabled');
+                linkButton.href = destinationUrl;
+                
+                // ব্যবহারকারীকে স্বয়ংক্রিয়ভাবে রিডাইরেক্ট করা হবে
+                window.location.href = destinationUrl;
+            }
+        }, 1000);
+
+        linkButton.addEventListener('click', (e) => {
+            if (!linkButton.classList.contains('enabled')) {
+                e.preventDefault();
+            }
+        });
+    </script>
+    
+    {% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
+</body>
+</html>
 """
 
 admin_html = """
@@ -598,7 +720,17 @@ hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray)
 </style><link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;700&display=swap" rel="stylesheet"></head>
 <body>
   <h2>বিজ্ঞাপন পরিচালনা (Ad Management)</h2>
-  <form action="{{ url_for('save_ads') }}" method="post"><div class="form-group"><label>Pop-Under / OnClick Ad Code</label><textarea name="popunder_code" rows="4">{{ ad_settings.popunder_code or '' }}</textarea></div><div class="form-group"><label>Social Bar / Sticky Ad Code</label><textarea name="social_bar_code" rows="4">{{ ad_settings.social_bar_code or '' }}</textarea></div><div class="form-group"><label>ব্যানার বিজ্ঞাপন কোড (Banner Ad)</label><textarea name="banner_ad_code" rows="4">{{ ad_settings.banner_ad_code or '' }}</textarea></div><div class="form-group"><label>নেটিভ ব্যানার বিজ্ঞাপন (Native Banner)</label><textarea name="native_banner_code" rows="4">{{ ad_settings.native_banner_code or '' }}</textarea></div><button type="submit">Save Ad Codes</button></form>
+  <form action="{{ url_for('save_ads') }}" method="post">
+    <div class="form-group"><label>Pop-Under / OnClick Ad Code</label><textarea name="popunder_code" rows="4">{{ ad_settings.popunder_code or '' }}</textarea></div>
+    <div class="form-group"><label>Social Bar / Sticky Ad Code</label><textarea name="social_bar_code" rows="4">{{ ad_settings.social_bar_code or '' }}</textarea></div>
+    <div class="form-group"><label>ব্যানার বিজ্ঞাপন কোড (Main Pages)</label><textarea name="banner_ad_code" rows="4">{{ ad_settings.banner_ad_code or '' }}</textarea></div>
+    <div class="form-group"><label>নেটিভ ব্যানার বিজ্ঞাপন (Main Pages)</label><textarea name="native_banner_code" rows="4">{{ ad_settings.native_banner_code or '' }}</textarea></div>
+    <hr>
+    <h3>লিংক পেজের বিজ্ঞাপন (Link Page Ads)</h3>
+    <div class="form-group"><label>লিংক পেজের বিজ্ঞাপন ১ (ব্যানার)</label><textarea name="link_page_ad_1" rows="4">{{ ad_settings.link_page_ad_1 or '' }}</textarea></div>
+    <div class="form-group"><label>লিংক পেজের বিজ্ঞাপন ২ (নেটিভ)</label><textarea name="link_page_ad_2" rows="4">{{ ad_settings.link_page_ad_2 or '' }}</textarea></div>
+    <button type="submit">Save Ad Codes</button>
+  </form>
   <hr class="section-divider">
   <h2>Add New Content (Manual)</h2>
   <form method="post" action="{{ url_for('admin') }}">
@@ -889,6 +1021,16 @@ def recently_added_all(): return render_full_list(list(movies.find({"is_coming_s
 # ======================================================================
 # --- Admin and Other Routes ---
 # ======================================================================
+
+# --- নতুন রুট: লিংক পেজের জন্য ---
+@app.route('/go')
+def go_to_link():
+    destination_url = request.args.get('url')
+    if not destination_url:
+        return redirect(url_for('home'))
+        
+    return render_template_string(go_link_html, destination_url=destination_url)
+
 @app.route('/admin', methods=["GET", "POST"])
 @requires_auth
 def admin():
@@ -933,7 +1075,15 @@ def admin():
 @app.route('/admin/save_ads', methods=['POST'])
 @requires_auth
 def save_ads():
-    ad_codes = { "popunder_code": request.form.get("popunder_code", ""), "social_bar_code": request.form.get("social_bar_code", ""), "banner_ad_code": request.form.get("banner_ad_code", ""), "native_banner_code": request.form.get("native_banner_code", "") }
+    ad_codes = { 
+        "popunder_code": request.form.get("popunder_code", ""), 
+        "social_bar_code": request.form.get("social_bar_code", ""), 
+        "banner_ad_code": request.form.get("banner_ad_code", ""), 
+        "native_banner_code": request.form.get("native_banner_code", ""),
+        # --- পরিবর্তন এখানে: নতুন বিজ্ঞাপন কোড সেভ করা ---
+        "link_page_ad_1": request.form.get("link_page_ad_1", ""),
+        "link_page_ad_2": request.form.get("link_page_ad_2", ""),
+    }
     settings.update_one({}, {"$set": ad_codes}, upsert=True)
     return redirect(url_for('admin'))
 
