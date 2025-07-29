@@ -182,7 +182,7 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         print(f"FATAL ERROR in post_to_public_channel: {e}")
 
 # ======================================================================
-# --- HTML টেমপ্লেট ---
+# --- HTML টেমপ্লেট (অপটিমাইজড) ---
 # ======================================================================
 index_html = """
 <!DOCTYPE html>
@@ -192,6 +192,7 @@ index_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>MovieZone - Your Entertainment Hub</title>
 <style>
+  /* অপটিমাইজড ফন্ট লোডিং */
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
   :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --text-dark: #a0a0a0; --nav-height: 60px; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -217,7 +218,12 @@ index_html = """
   .hero-buttons .btn { padding: 10px 24px; margin-right: 0.8rem; border: none; border-radius: 4px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
   .btn.btn-primary { background-color: var(--netflix-red); color: white; } .btn.btn-secondary { background-color: rgba(109, 109, 110, 0.7); color: white; } .btn:hover { opacity: 0.8; }
   main { padding: 0 50px; }
-  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; }
+  .movie-card { 
+    display: block; 
+    cursor: pointer; 
+    transition: transform 0.3s ease;
+    will-change: transform; /* পারফরম্যান্সের জন্য যোগ করা হয়েছে */
+  }
   .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
   .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
   .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
@@ -259,7 +265,7 @@ index_html = """
       .tags-section { padding: 80px 15px 15px 15px; } .tag-link { padding: 6px 15px; font-size: 0.8rem; } .hero-section { height: 60vh; margin: 0 -15px;}
       .hero-slide { padding: 15px; align-items: center; } .hero-content { max-width: 90%; text-align: center; } .hero-title { font-size: 2.8rem; } .hero-overview { display: none; }
       .category-section { margin: 25px 0; } .category-title { font-size: 1.2rem; }
-      .category-grid, .full-page-grid { grid-template-columns: repeat(auto-fill, minmax(95px, 1fr)); gap: 15px 10px; } /* পরিবর্তন এখানে: 110px থেকে 95px করা হয়েছে ৩টি কলাম দেখানোর জন্য */
+      .category-grid, .full-page-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; }
       .full-page-grid-container { padding-top: 80px; } .full-page-grid-title { font-size: 1.8rem; }
       .bottom-nav { display: flex; } .ad-container { margin: 25px 0; }
       .telegram-join-section { margin: 50px -15px -30px -15px; }
@@ -275,7 +281,8 @@ index_html = """
     <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
       <div class="poster-wrapper">
         <div class="movie-poster-container">
-           <img class="movie-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
+           <!-- ইমেজ সোর্স অপটিমাইজ করা হয়েছে -->
+           <img class="movie-poster" loading="lazy" src="{{ (m.poster | replace('w500', 'w342')) if m.poster else 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
            {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
            {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
         </div>
@@ -411,7 +418,7 @@ detail_html = """
   .ad-container { margin: 30px 0; text-align: center; }
   .related-section-container { padding: 40px 0; background-color: #181818; }
   .related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; padding: 0 50px; }
-  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; }
+  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; will-change: transform; }
   .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
   .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
   .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
@@ -437,7 +444,8 @@ detail_html = """
   <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
     <div class="poster-wrapper">
       <div class="movie-poster-container">
-        <img class="movie-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
+        <!-- ইমেজ সোর্স অপটিমাইজ করা হয়েছে -->
+        <img class="movie-poster" loading="lazy" src="{{ (m.poster | replace('w500', 'w342')) if m.poster else 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
         {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
         {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
       </div>
@@ -564,7 +572,6 @@ genres_html = """
 </body></html>
 """
 
-# --- নতুন টেমপ্লেট: লিংক পেজের জন্য ---
 go_link_html = """
 <!DOCTYPE html>
 <html lang="en">
@@ -679,7 +686,6 @@ go_link_html = """
                 linkButton.classList.add('enabled');
                 linkButton.href = destinationUrl;
                 
-                // ব্যবহারকারীকে স্বয়ংক্রিয়ভাবে রিডাইরেক্ট করা হবে
                 window.location.href = destinationUrl;
             }
         }, 1000);
@@ -1022,7 +1028,6 @@ def recently_added_all(): return render_full_list(list(movies.find({"is_coming_s
 # --- Admin and Other Routes ---
 # ======================================================================
 
-# --- নতুন রুট: লিংক পেজের জন্য ---
 @app.route('/go')
 def go_to_link():
     destination_url = request.args.get('url')
@@ -1166,20 +1171,18 @@ def delete_feedback(feedback_id):
 
 
 # ======================================================================
-# --- নতুন Helper ফাংশন: সিরিজ খুঁজে বের করা বা তৈরি করা ---
+# --- Helper ফাংশন: সিরিজ খুঁজে বের করা বা তৈরি করা ---
 # ======================================================================
 def find_or_create_series(user_title, year, badge, chat_id):
     """
     ডাটাবেজে সিরিজ খুঁজে বের করে। না পেলে TMDb থেকে তথ্য নিয়ে নতুন সিরিজ তৈরি করে।
     Returns the series document or None if creation fails.
     """
-    # প্রথমে ডাটাবেজে সিরিজটি খোঁজা হবে
     series = movies.find_one({"title": {"$regex": f"^{re.escape(user_title)}$", "$options": "i"}, "type": "series"})
     if series:
         print(f"INFO: Found existing series '{user_title}' in DB.")
         return series
 
-    # যদি সিরিজটি ডাটাবেজে না থাকে
     print(f"INFO: Series '{user_title}' not in DB. Creating new entry.")
     requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Series page for `{user_title}` not found. Creating it now...", 'parse_mode': 'Markdown'})
     
@@ -1209,26 +1212,24 @@ def find_or_create_series(user_title, year, badge, chat_id):
         print(f"SUCCESS: Created new series '{user_title}' and posted to channel.")
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully created series page for `{user_title}`.", 'parse_mode': 'Markdown'})
     
-    # সর্বশেষ আপডেটেড ডকুমেন্টটি ডাটাবেজ থেকে আবার আনা হচ্ছে
     return movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"})
 
 
 # ======================================================================
-# --- Webhook Route (FINAL VERSION) ---
+# --- Webhook Route ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
 
     if 'channel_post' in data:
-        pass # চ্যানেল পোস্ট এখানে হ্যান্ডেল করা হয় না
+        pass 
 
     elif 'message' in data:
         message = data['message']
         chat_id = message['chat']['id']
         text = message.get('text', '').strip()
         
-        # --- Start command for regular users ---
         if text.startswith('/start'):
             payload_str = text.split(' ', 1)[-1]
             if payload_str != '/start':
@@ -1267,11 +1268,9 @@ def telegram_webhook():
             
             return jsonify(status='ok')
 
-        # --- Admin-only commands ---
         if str(chat_id) not in ADMIN_USER_IDS:
             return jsonify(status='ok')
         
-        # --- /add command (for Movies) ---
         if text.startswith('/add '):
             try:
                 parts = text.split('/add ', 1)[1].split('|')
@@ -1313,7 +1312,6 @@ def telegram_webhook():
                           f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
-        # --- নতুন: /addep command (for Series Episodes) ---
         elif text.startswith('/addep '):
             try:
                 parts = text.split('/addep ', 1)[1].split('|')
@@ -1331,10 +1329,9 @@ def telegram_webhook():
                 if not se_match: raise ValueError("Invalid S/E format. Use S01E01.")
                 season_num, episode_num = int(se_match.group(1)), int(se_match.group(2))
 
-                # সিরিজ খুঁজে বের করা বা তৈরি করা
                 series = find_or_create_series(user_title, year, badge, chat_id)
                 if not series:
-                    return jsonify(status='ok') # Helper function already sent an error message
+                    return jsonify(status='ok') 
 
                 series_id = series['_id']
                 new_episode = {
@@ -1345,7 +1342,6 @@ def telegram_webhook():
                     "download_links": parse_links_from_string(download_links_str), 
                     "message_id": None
                 }
-                # পুরোনো এপিসোড থাকলে ডিলেট করে নতুনটা যোগ করা
                 movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
                 movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
                 
@@ -1359,7 +1355,6 @@ def telegram_webhook():
                           f"`/addep Series Name (Year) [Language] | S01E01 | Watch Links | Download Links`")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
 
-        # --- নতুন: /addpack command (for Season Packs) ---
         elif text.startswith('/addpack '):
             try:
                 parts = text.split('/addpack ', 1)[1].split('|')
@@ -1377,7 +1372,6 @@ def telegram_webhook():
                 if not se_match: raise ValueError("Invalid season format. Use S01.")
                 season_num = int(se_match.group(1))
 
-                # সিরিজ খুঁজে বের করা বা তৈরি করা
                 series = find_or_create_series(user_title, year, badge, chat_id)
                 if not series:
                     return jsonify(status='ok')
@@ -1389,7 +1383,6 @@ def telegram_webhook():
                     "message_id": None
                 }
                 
-                # পুরোনো প্যাক থাকলে ডিলেট করে নতুনটা যোগ করা
                 movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
                 movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
                 
