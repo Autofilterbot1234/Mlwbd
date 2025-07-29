@@ -212,6 +212,7 @@ index_html = """
   .main-nav, .hero-section, .tags-section, .telegram-join-section, .card-info-static, .rating-badge {
     display: none;
   }
+  .category-header { display: none; }
   
   .category-grid, .full-page-grid {
     display: grid;
@@ -220,7 +221,6 @@ index_html = """
   }
   
   .category-section { margin-top: 30px; }
-  .category-header { display: none; } /* Hide "See all" on mobile */
   .full-page-grid-container { padding-top: 20px; }
   .full-page-grid-title { font-size: 1.8rem; margin-bottom: 20px; text-align: center; }
 
@@ -307,7 +307,7 @@ index_html = """
       main { padding: 0 50px; }
       .main-nav, .hero-section, .tags-section, .telegram-join-section { display: flex; }
       .bottom-nav, .card-info-mobile { display: none; }
-      .category-header { display: flex; }
+      .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
       .category-section { margin: 40px 0; }
       .category-title { font-weight: 700; font-size: 1.6rem; margin: 0; }
       .see-all-link { color: var(--text-dark); font-weight: 700; font-size: 0.9rem; }
