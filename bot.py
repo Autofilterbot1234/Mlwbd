@@ -206,7 +206,7 @@ index_html = """
     overflow-x: hidden;
     padding-bottom: var(--nav-height); 
   }
-  main { padding: 20px 10px; }
+  main { padding: 20px 15px; }
   
   /* Hiding desktop elements on mobile */
   .main-nav, .hero-section, .tags-section, .telegram-join-section, .card-info-static, .rating-badge {
@@ -218,13 +218,13 @@ index_html = """
   .category-title { font-weight: 700; font-size: 1.2rem; margin: 0; }
   .see-all-link { color: var(--text-dark); font-weight: 500; font-size: 0.8rem; }
 
-  /* === এখানে পরিবর্তন করা হয়েছে === */
+  /* === চূড়ান্ত পরিবর্তন: প্রতি সারিতে ২টি পোস্টার === */
   .category-grid, .full-page-grid {
     display: grid;
-    /* প্রতি সারিতে ৩টি কলাম দেখানো হবে */
-    grid-template-columns: repeat(3, 1fr); 
-    /* পোস্টারগুলোর মধ্যে আনুভূমিক ও উল্লম্ব দূরত্ব কমানো হয়েছে */
-    gap: 20px 10px; 
+    /* প্রতি সারিতে ২টি কলাম দেখানো হবে */
+    grid-template-columns: repeat(2, 1fr); 
+    /* পোস্টারগুলোর মধ্যে উল্লম্ব ও আনুভূমিক দূরত্ব */
+    gap: 25px 15px; 
   }
   
   .category-section { margin-top: 30px; }
@@ -277,15 +277,15 @@ index_html = """
       color: #00e5ff;
       font-weight: 500;
       margin: 0 4px;
-      font-size: 0.9rem; /* টাইটেলের ফন্ট সাইজ একটু কমানো হয়েছে */
+      font-size: 1rem; /* টাইটেলের ফন্ট সাইজ সামান্য বড় করা হয়েছে */
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       line-height: 1.2;
   }
   .year-button {
       background: linear-gradient(90deg, #ff9800, #f44336);
-      color: white; padding: 3px 15px; border-radius: 6px;
-      font-size: 0.8rem; font-weight: 500;
-      display: inline-block; margin-top: 6px;
+      color: white; padding: 4px 18px; border-radius: 6px;
+      font-size: 0.85rem; font-weight: 500;
+      display: inline-block; margin-top: 8px;
   }
   .bottom-nav {
       display: flex; position: fixed;
@@ -549,7 +549,7 @@ detail_html = """
   .action-buttons-container { flex-direction: column; }
   .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-buttons { width: 100%; justify-content: space-between; } .episode-button { flex-grow: 1; justify-content: center; }
   .section-title { margin-left: 15px !important; } .related-section-container { padding: 20px 0; }
-  .related-grid { grid-template-columns: repeat(3, 1fr); gap: 15px 10px; padding: 0 15px; } 
+  .related-grid { grid-template-columns: repeat(2, 1fr); gap: 15px 10px; padding: 0 15px; } 
   .card-info-static { display:none; }
   }
 </style>
@@ -1093,7 +1093,7 @@ def home():
         "coming_soon_movies": process_movie_list(list(movies.find({"is_coming_soon": True}).sort('_id', -1).limit(limit))),
         "recently_added": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(6))),
         "recently_added_full": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "is_full_page_list": False, "query": "", "all_badges": all_badges
+        "is_full_page_list": False, "query": query, "all_badges": all_badges
     }
     return render_template_string(index_html, **context)
 
@@ -1230,7 +1230,7 @@ def edit_movie(movie_id):
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
         else: # Series
-            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
+            update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m and m.isdigit() else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
             update_data["season_packs"] = [{
                 "season": int(s),
                 "watch_links": parse_links_from_string(wl),
