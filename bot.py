@@ -259,7 +259,7 @@ index_html = """
       .tags-section { padding: 80px 15px 15px 15px; } .tag-link { padding: 6px 15px; font-size: 0.8rem; } .hero-section { height: 60vh; margin: 0 -15px;}
       .hero-slide { padding: 15px; align-items: center; } .hero-content { max-width: 90%; text-align: center; } .hero-title { font-size: 2.8rem; } .hero-overview { display: none; }
       .category-section { margin: 25px 0; } .category-title { font-size: 1.2rem; }
-      .category-grid, .full-page-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; }
+      .category-grid, .full-page-grid { grid-template-columns: repeat(auto-fill, minmax(95px, 1fr)); gap: 15px 10px; } /* পরিবর্তন এখানে: 110px থেকে 95px করা হয়েছে ৩টি কলাম দেখানোর জন্য */
       .full-page-grid-container { padding-top: 80px; } .full-page-grid-title { font-size: 1.8rem; }
       .bottom-nav { display: flex; } .ad-container { margin: 25px 0; }
       .telegram-join-section { margin: 50px -15px -30px -15px; }
@@ -1080,7 +1080,6 @@ def save_ads():
         "social_bar_code": request.form.get("social_bar_code", ""), 
         "banner_ad_code": request.form.get("banner_ad_code", ""), 
         "native_banner_code": request.form.get("native_banner_code", ""),
-        # --- পরিবর্তন এখানে: নতুন বিজ্ঞাপন কোড সেভ করা ---
         "link_page_ad_1": request.form.get("link_page_ad_1", ""),
         "link_page_ad_2": request.form.get("link_page_ad_2", ""),
     }
