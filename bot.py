@@ -212,12 +212,19 @@ index_html = """
   .main-nav, .hero-section, .tags-section, .telegram-join-section, .card-info-static, .rating-badge {
     display: none;
   }
-  .category-header { display: none; }
   
+  /* Show category title on mobile */
+  .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+  .category-title { font-weight: 700; font-size: 1.2rem; margin: 0; }
+  .see-all-link { color: var(--text-dark); font-weight: 500; font-size: 0.8rem; }
+
+  /* === এখানে পরিবর্তন করা হয়েছে === */
   .category-grid, .full-page-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 30px 12px;
+    /* প্রতি সারিতে ৩টি কলাম দেখানো হবে */
+    grid-template-columns: repeat(3, 1fr); 
+    /* পোস্টারগুলোর মধ্যে আনুভূমিক ও উল্লম্ব দূরত্ব কমানো হয়েছে */
+    gap: 20px 10px; 
   }
   
   .category-section { margin-top: 30px; }
@@ -270,14 +277,15 @@ index_html = """
       color: #00e5ff;
       font-weight: 500;
       margin: 0 4px;
-      font-size: 1rem;
+      font-size: 0.9rem; /* টাইটেলের ফন্ট সাইজ একটু কমানো হয়েছে */
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      line-height: 1.2;
   }
   .year-button {
       background: linear-gradient(90deg, #ff9800, #f44336);
-      color: white; padding: 4px 20px; border-radius: 6px;
-      font-size: 0.9rem; font-weight: 500;
-      display: inline-block; margin-top: 8px;
+      color: white; padding: 3px 15px; border-radius: 6px;
+      font-size: 0.8rem; font-weight: 500;
+      display: inline-block; margin-top: 6px;
   }
   .bottom-nav {
       display: flex; position: fixed;
@@ -306,11 +314,13 @@ index_html = """
       body { background-color: #141414; padding-bottom: 0; }
       main { padding: 0 50px; }
       .main-nav, .hero-section, .tags-section, .telegram-join-section { display: flex; }
-      .bottom-nav, .card-info-mobile { display: none; }
+      .bottom-nav, .card-info-mobile, .mobile-search-bar { display: none; }
+      
       .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+      .category-title { font-size: 1.6rem; }
+      .see-all-link { font-size: 0.9rem; }
+
       .category-section { margin: 40px 0; }
-      .category-title { font-weight: 700; font-size: 1.6rem; margin: 0; }
-      .see-all-link { color: var(--text-dark); font-weight: 700; font-size: 0.9rem; }
       .full-page-grid-container { padding-top: 100px; padding-bottom: 50px; }
       .full-page-grid-title { font-size: 2.5rem; text-align: left; }
       .category-grid, .full-page-grid {
@@ -432,9 +442,29 @@ index_html = """
         <i class="fa fa-search"></i><span>Search</span>
     </a>
 </nav>
+<!-- Mobile search bar -->
+<div style="position:fixed; top:0; left:0; right:0; padding:10px; background:#111; z-index: 210; transition: top 0.3s ease-in-out;" class="mobile-search-bar">
+    <form method="GET" action="/"><input type="search" name="q" class="search-input-mobile" placeholder="Search movies & series..." value="{{ query|default('') }}" style="width:100%; padding:12px; border-radius: 20px; border: 1px solid #333; background: #222; color: #fff; font-size:1rem;"></form>
+</div>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        const mainContent = document.querySelector('main');
+        if (window.innerWidth < 769) {
+            mainContent.style.paddingTop = '70px'; // Add padding to avoid overlap with search bar
+            const searchBar = document.querySelector('.mobile-search-bar');
+            let lastScrollTop = 0;
+            window.addEventListener('scroll', function() {
+                let scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                if (scrollTop > lastScrollTop && scrollTop > 60){ // Scroll Down
+                    searchBar.style.top = '-80px';
+                } else { // Scroll Up
+                    searchBar.style.top = '0';
+                }
+                lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
+            }, false);
+        }
+
         if (window.innerWidth >= 769) {
             const nav = document.querySelector('.main-nav');
             window.addEventListener('scroll', () => { window.scrollY > 50 ? nav.classList.add('scrolled') : nav.classList.remove('scrolled'); });
@@ -519,7 +549,9 @@ detail_html = """
   .action-buttons-container { flex-direction: column; }
   .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-buttons { width: 100%; justify-content: space-between; } .episode-button { flex-grow: 1; justify-content: center; }
   .section-title { margin-left: 15px !important; } .related-section-container { padding: 20px 0; }
-  .related-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; padding: 0 15px; } }
+  .related-grid { grid-template-columns: repeat(3, 1fr); gap: 15px 10px; padding: 0 15px; } 
+  .card-info-static { display:none; }
+  }
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
 </head>
@@ -528,7 +560,6 @@ detail_html = """
   <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
     <div class="poster-wrapper">
       <div class="movie-poster-container">
-        <!-- ইমেজ সোর্স অপটিমাইজ করা হয়েছে -->
         <img class="movie-poster" loading="lazy" src="{{ (m.poster | replace('w500', 'w342')) if m.poster else 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
         {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
         {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
@@ -611,7 +642,7 @@ detail_html = """
                       <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" class="episode-button download"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
                     {% endfor %}
                     {% if ep.message_id %}
-                      <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get</a>
+                      <a href="https.t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get</a>
                     {% endif %}
                 </div>
               </div>
@@ -1075,7 +1106,7 @@ def movie_detail(movie_id):
         if not movie: return "Content not found", 404
         related_movies = []
         if movie.get("genres"):
-            related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": obj_id}}).limit(12))
+            related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": obj_id}, "is_coming_soon": {"$ne": True}}).limit(12))
         return render_template_string(detail_html, movie=movie, trailer_key=movie.get("trailer_key"), related_movies=process_movie_list(related_movies))
     except Exception as e:
         print(f"Error in movie_detail route: {e}")
