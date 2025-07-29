@@ -196,154 +196,174 @@ index_html = """
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
   :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --text-dark: #a0a0a0; --nav-height: 60px; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Roboto', sans-serif; background-color: var(--netflix-black); color: var(--text-light); overflow-x: hidden; }
+  body { font-family: 'Roboto', sans-serif; background-color: #0A0A0A; color: var(--text-light); overflow-x: hidden; }
   a { text-decoration: none; color: inherit; }
   ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #222; } ::-webkit-scrollbar-thumb { background: #555; } ::-webkit-scrollbar-thumb:hover { background: var(--netflix-red); }
-  .main-nav { position: fixed; top: 0; left: 0; width: 100%; padding: 15px 50px; display: flex; justify-content: space-between; align-items: center; z-index: 100; transition: background-color 0.3s ease; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 10%, rgba(0,0,0,0)); }
+  
+  /* Top Nav - Hidden on Mobile */
+  .main-nav {
+    display: none; 
+    position: fixed; top: 0; left: 0; width: 100%; padding: 15px 50px; justify-content: space-between; align-items: center; z-index: 100; transition: background-color 0.3s ease; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 10%, rgba(0,0,0,0));
+  }
   .main-nav.scrolled { background-color: var(--netflix-black); }
   .logo { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--netflix-red); font-weight: 700; letter-spacing: 1px; }
   .search-input { background-color: rgba(0,0,0,0.7); border: 1px solid #777; color: var(--text-light); padding: 8px 15px; border-radius: 4px; transition: width 0.3s ease, background-color 0.3s ease; width: 250px; }
   .search-input:focus { background-color: rgba(0,0,0,0.9); border-color: var(--text-light); outline: none; }
-  .tags-section { padding: 80px 50px 20px 50px; background-color: var(--netflix-black); }
-  .tags-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-  .tag-link { padding: 6px 16px; background-color: rgba(255, 255, 255, 0.1); border: 1px solid #444; border-radius: 50px; font-weight: 500; font-size: 0.85rem; transition: all 0.3s; }
-  .tag-link:hover { background-color: var(--netflix-red); border-color: var(--netflix-red); color: white; }
-  .hero-section { height: 85vh; position: relative; color: white; overflow: hidden; }
-  .hero-slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center top; display: flex; align-items: flex-end; padding: 50px; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: 1; }
-  .hero-slide.active { opacity: 1; z-index: 2; }
-  .hero-slide::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--netflix-black) 10%, transparent 50%), linear-gradient(to right, rgba(0,0,0,0.8) 0%, transparent 60%); }
-  .hero-content { position: relative; z-index: 3; max-width: 50%; }
-  .hero-title { font-family: 'Bebas Neue', sans-serif; font-size: 5rem; font-weight: 700; margin-bottom: 1rem; line-height: 1; }
-  .hero-overview { font-size: 1.1rem; line-height: 1.5; margin-bottom: 1.5rem; max-width: 600px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .hero-buttons .btn { padding: 10px 24px; margin-right: 0.8rem; border: none; border-radius: 4px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
-  .btn.btn-primary { background-color: var(--netflix-red); color: white; } .btn.btn-secondary { background-color: rgba(109, 109, 110, 0.7); color: white; } .btn:hover { opacity: 0.8; }
-  main { padding: 0 50px; }
-  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; will-change: transform; /* পারফরম্যান্সের জন্য যোগ করা হয়েছে */ }
-  .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
-  .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
-  .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
-  .poster-badge { position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); }
-  .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
-  .rating-badge .fa-star { color: #f5c518; }
-  .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
-  .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
-  .card-info-mobile { display: none; }
-  @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
-  .full-page-grid-container { padding-top: 100px; padding-bottom: 50px; }
-  .full-page-grid-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 30px; }
-  .category-grid, .full-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; }
-  .category-section { margin: 40px 0; }
-  .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-  .category-title { font-family: 'Roboto', sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; }
-  .see-all-link { color: var(--text-dark); font-weight: 700; font-size: 0.9rem; }
-  .bottom-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav-height); background-color: #181818; border-top: 1px solid #282828; justify-content: space-around; align-items: center; z-index: 200; }
-  .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-dark); font-size: 10px; flex-grow: 1; padding: 5px 0; transition: color 0.2s ease; }
-  .nav-item i { font-size: 20px; margin-bottom: 4px; } .nav-item.active { color: var(--netflix-red); }
-  .ad-container { margin: 40px 0; display: flex; justify-content: center; align-items: center; }
-  .telegram-join-section { background-color: #181818; padding: 40px 20px; text-align: center; margin: 50px -50px -50px -50px; }
-  .telegram-join-section .telegram-icon { font-size: 4rem; color: #2AABEE; margin-bottom: 15px; } .telegram-join-section h2 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: var(--text-light); margin-bottom: 10px; }
-  .telegram-join-section p { font-size: 1.1rem; color: var(--text-dark); max-width: 600px; margin: 0 auto 25px auto; }
-  .telegram-join-button { display: inline-flex; align-items: center; gap: 10px; background-color: #2AABEE; color: white; padding: 12px 30px; border-radius: 50px; font-size: 1.1rem; font-weight: 700; transition: all 0.2s ease; }
-  .telegram-join-button:hover { transform: scale(1.05); background-color: #1e96d1; } .telegram-join-button i { font-size: 1.3rem; }
   
-  /* =================================================================== */
-  /* --- START: NEW MOBILE DESIGN STYLES (AS PER SCREENSHOT) --- */
-  /* =================================================================== */
-  @media (max-width: 768px) {
-      body { padding-bottom: var(--nav-height); } .main-nav { padding: 10px 15px; } main { padding: 0 15px; } .logo { font-size: 24px; } .search-input { width: 150px; }
-      .tags-section { padding: 80px 15px 15px 15px; } .tag-link { padding: 6px 15px; font-size: 0.8rem; } .hero-section { display: none; } /* Hide hero for new mobile layout */
-      .category-section { margin: 25px 0; } .category-title { font-size: 1.2rem; }
-      .full-page-grid-container { padding-top: 80px; } .full-page-grid-title { font-size: 1.8rem; }
-      .bottom-nav { display: flex; } .ad-container { margin: 25px 0; }
-      .telegram-join-section { margin: 50px -15px -30px -15px; }
-      .telegram-join-section h2 { font-size: 2rem; } .telegram-join-section p { font-size: 1rem; }
+  /* Desktop specific styles */
+  .tags-section, .hero-section, .category-section, .telegram-join-section { display: none; }
 
-      /* New Grid Layout */
-      .category-grid, .full-page-grid {
-          grid-template-columns: repeat(3, 1fr);
-          gap: 25px 15px;
-      }
-
-      /* Disable hover effects on mobile */
-      .movie-card:hover { transform: none; box-shadow: none; }
-      .movie-card:hover .movie-poster { transform: none; }
-
-      /* Card Styling */
-      .movie-card {
-          text-align: center;
-      }
-      .poster-wrapper {
-          border: 1.5px solid #ff1493; /* Neon Pink/Magenta */
-          box-shadow: 0 0 5px #ff1493, 0 0 10px rgba(255, 20, 147, 0.7);
-          background-color: transparent;
-          border-radius: 8px;
-          padding: 0;
-      }
-      .movie-poster-container {
-          border-radius: 6px;
-      }
-      .rating-badge {
-          display: none; /* Hide rating badge on mobile */
-      }
-
-      /* New Trending Badge Style */
-      .poster-badge {
-          background: linear-gradient(45deg, #03a9f4, #01579b);
-          transform: rotate(-45deg);
-          top: -5px;
-          left: -5px;
-          width: 90px;
-          height: 90px;
-          display: flex;
-          align-items: flex-end;
-          justify-content: center;
-          padding-bottom: 5px;
-          box-sizing: border-box;
-          clip-path: polygon(0 0, 100% 0, 0 100%);
-          color: white;
-          font-weight: bold;
-          font-size: 0.75rem;
-          text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-          /* Override defaults */
-          animation: none;
-          border: none;
-          backdrop-filter: none;
-      }
-
-      /* Hide Desktop Info Box and Show Mobile one */
-      .card-info-static {
-          display: none;
-      }
-      .card-info-mobile {
-          display: block;
-      }
-      .new-card-title {
-          color: #00e5ff; /* Bright Cyan */
-          font-weight: 500;
-          text-align: center;
-          margin: 10px 4px 0 4px;
-          font-size: 1rem;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-      }
-      .year-button {
-          background: linear-gradient(90deg, #ff9800, #f44336); /* Orange to Red */
-          color: white;
-          padding: 4px 20px;
-          border-radius: 6px;
-          font-size: 0.9rem;
-          font-weight: 500;
-          display: inline-block;
-          margin-top: 8px;
-          margin-bottom: 5px;
-      }
+  main { padding: 20px 10px; }
+  .full-page-grid, .category-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 30px 12px;
   }
-  /* =================================================================== */
-  /* --- END: NEW MOBILE DESIGN STYLES --- */
-  /* =================================================================== */
+  .movie-card {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+  }
+  .poster-wrapper {
+      position: relative;
+      border: 1.5px solid;
+      border-radius: 8px;
+      overflow: visible; /* To allow glow effect */
+      padding: 0;
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      margin-bottom: 10px;
+  }
+  .movie-poster-container {
+      width: 100%;
+      height: 100%;
+      border-radius: 6px;
+      overflow: hidden;
+  }
+  .movie-poster {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+  }
 
+  /* Neon Glow Effect for cards */
+  .poster-wrapper { border-image-slice: 1; border-image-source: linear-gradient(to right, #f83, #f03, #3cf, #0f3); animation: neon-glow 2s linear infinite; }
+  @keyframes neon-glow {
+      0% { box-shadow: 0 0 3px #f83, 0 0 6px #f03, 0 0 9px #3cf, 0 0 12px #0f3; }
+      50% { box-shadow: 0 0 6px #0f3, 0 0 9px #3cf, 0 0 12px #f03, 0 0 15px #f83; }
+      100% { box-shadow: 0 0 3px #f83, 0 0 6px #f03, 0 0 9px #3cf, 0 0 12px #0f3; }
+  }
+
+  /* Trending Badge */
+  .poster-badge {
+      position: absolute;
+      background: linear-gradient(45deg, #03a9f4, #01579b);
+      transform: rotate(-45deg);
+      top: -6px;
+      left: -6px;
+      width: 90px;
+      height: 90px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 5px;
+      box-sizing: border-box;
+      clip-path: polygon(0 0, 100% 0, 0 100%);
+      color: white;
+      font-weight: bold;
+      font-size: 0.75rem;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+      z-index: 5;
+  }
+
+  .new-card-title {
+      color: #00e5ff; /* Bright Cyan */
+      font-weight: 500;
+      text-align: center;
+      margin: 0 4px;
+      font-size: 1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+  }
+  .year-button {
+      background: linear-gradient(90deg, #ff9800, #f44336); /* Orange to Red */
+      color: white;
+      padding: 4px 20px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      display: inline-block;
+      margin-top: 8px;
+  }
+  .card-info-static, .rating-badge { display: none; } /* Hide desktop elements */
+
+  /* Bottom Nav */
+  .bottom-nav {
+      display: flex;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: var(--nav-height);
+      background-color: #000;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 200;
+  }
+  .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: var(--text-dark);
+      font-size: 12px;
+      font-weight: 500;
+      flex-grow: 1;
+      padding: 5px 0;
+      transition: color 0.2s ease;
+  }
+  .nav-item i {
+      font-size: 24px;
+      margin-bottom: 4px;
+  }
+  .nav-item.active { color: var(--text-light); }
+  .nav-item.active i { color: #00e5ff; }
+  .nav-item-request {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: white;
+      color: black;
+      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      margin-bottom: 25px;
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+  }
+  .nav-item-request i { font-size: 28px; margin: 0; }
+  
+  /* Desktop Styles (when screen is larger) */
+  @media (min-width: 769px) {
+      body { background-color: var(--netflix-black); padding-bottom: 0; }
+      .main-nav, .tags-section, .hero-section, .category-section, .telegram-join-section { display: flex; }
+      main { padding: 0 50px; }
+      .bottom-nav { display: none; }
+      .full-page-grid-container { padding-top: 100px; padding-bottom: 50px; }
+      .full-page-grid-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 30px; }
+      .category-grid, .full-page-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; }
+      .movie-card { flex-direction: row; }
+      .poster-wrapper { border: none; box-shadow: none; animation: none; margin-bottom: 0; aspect-ratio: auto;}
+      .movie-poster-container { aspect-ratio: 2 / 3; }
+      .new-card-title, .year-button, .card-info-mobile { display: none; }
+      .card-info-static { display: block; padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
+      .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
+      .poster-badge { background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); top: 18px; left: -35px; width: 140px; height: auto; clip-path: none; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); animation: none; }
+      @keyframes rgb-glow { 0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; } 33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; } 66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; } }
+      .poster-badge.desktop-badge { animation: rgb-glow 3s linear infinite; }
+      .rating-badge { display: flex; }
+      @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
+  }
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
 </head>
@@ -357,6 +377,8 @@ index_html = """
            <img class="movie-poster" loading="lazy" src="{{ (m.poster | replace('w500', 'w342')) if m.poster else 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
            {% if m.is_trending %}
              <div class="poster-badge">Trending</div>
+           {% elif m.poster_badge %}
+             <div class="poster-badge desktop-badge">{{ m.poster_badge }}</div>
            {% endif %}
            {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
         </div>
@@ -390,10 +412,17 @@ index_html = """
         {% endif %}
     </div>
   {% else %}
-    {% if all_badges %}<div class="tags-section"><div class="tags-container">{% for badge in all_badges %}<a href="{{ url_for('movies_by_badge', badge_name=badge) }}" class="tag-link">{{ badge }}</a>{% endfor %}</div></div>{% endif %}
-    
+    {# HERO SECTION FOR DESKTOP #}
     {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_links and movie.watch_links[0] and not movie.is_coming_soon %}<a href="{{ url_for('go_to_link', url=movie.watch_links[0].url) }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
 
+    {# GRID FOR MOBILE & DESKTOP #}
+    <div class="category-grid">
+       {% for m in (trending_movies + latest_movies + latest_series + recently_added_full + coming_soon_movies) | unique(attribute='_id') %}
+           {{ render_movie_card(m) }}
+       {% endfor %}
+    </div>
+    
+    {# DESKTOP-ONLY SECTIONS #}
     {% macro render_grid_section(title, movies_list, endpoint) %}
         {% if movies_list %}
         <div class="category-section">
@@ -409,44 +438,67 @@ index_html = """
         </div>
         {% endif %}
     {% endmacro %}
-
-    {{ render_grid_section('Trending Now', trending_movies, 'trending_movies') }}
-    {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
-    {{ render_grid_section('Latest Movies', latest_movies, 'movies_only') }}
-    {% if ad_settings.native_banner_code %}<div class="ad-container">{{ ad_settings.native_banner_code|safe }}</div>{% endif %}
-    {{ render_grid_section('Web Series', latest_series, 'webseries') }}
-    {{ render_grid_section('Recently Added', recently_added_full, 'recently_added_all') }}
-    {{ render_grid_section('Coming Soon', coming_soon_movies, 'coming_soon') }}
     
-    <div class="telegram-join-section">
-        <i class="fa-brands fa-telegram telegram-icon"></i>
-        <h2>Join Our Telegram Channel</h2>
-        <p>Get the latest movie updates, news, and direct download links right on your phone!</p>
-        <a href="{{ main_channel_link or '#' }}" target="_blank" class="telegram-join-button"><i class="fa-brands fa-telegram"></i> Join Main Channel</a>
+    <div style="display: none;" class="desktop-only-content">
+        {{ render_grid_section('Trending Now', trending_movies, 'trending_movies') }}
+        {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
+        {{ render_grid_section('Latest Movies', latest_movies, 'movies_only') }}
+        {% if ad_settings.native_banner_code %}<div class="ad-container">{{ ad_settings.native_banner_code|safe }}</div>{% endif %}
+        {{ render_grid_section('Web Series', latest_series, 'webseries') }}
+        {{ render_grid_section('Recently Added', recently_added_full, 'recently_added_all') }}
+        {{ render_grid_section('Coming Soon', coming_soon_movies, 'coming_soon') }}
+        
+        <div class="telegram-join-section">
+            <i class="fa-brands fa-telegram telegram-icon"></i>
+            <h2>Join Our Telegram Channel</h2>
+            <p>Get the latest movie updates, news, and direct download links right on your phone!</p>
+            <a href="{{ main_channel_link or '#' }}" target="_blank" class="telegram-join-button"><i class="fa-brands fa-telegram"></i> Join Main Channel</a>
+        </div>
     </div>
+    
   {% endif %}
 </main>
 <nav class="bottom-nav">
     <a href="{{ url_for('home') }}" class="nav-item {% if request.endpoint == 'home' %}active{% endif %}">
-        <i class="fas fa-home"></i><span>Home</span>
+        <i class="fa fa-home"></i><span>Home</span>
     </a>
     <a href="{{ url_for('movies_only') }}" class="nav-item {% if request.endpoint == 'movies_only' %}active{% endif %}">
-        <i class="fas fa-film"></i><span>Movie</span>
+        <i class="fa fa-film"></i><span>Movie</span>
     </a>
-    <a href="{{ url_for('contact') }}" class="nav-item {% if request.endpoint == 'contact' %}active{% endif %}">
-        <i class="fas fa-plus-circle"></i><span>Request</span>
+    <a href="{{ url_for('contact') }}" class="nav-item-request">
+        <i class="fa fa-plus"></i>
     </a>
     <a href="{{ url_for('webseries') }}" class="nav-item {% if request.endpoint == 'webseries' %}active{% endif %}">
-        <i class="fas fa-tv"></i><span>Web Series</span>
+        <i class="fa fa-tv"></i><span>Web Series</span>
     </a>
-    <a href="{{ url_for('home') }}" class="nav-item">
-        <i class="fas fa-search"></i><span>Search</span>
+    <a href="#" class="nav-item" onclick="document.querySelector('.search-input-mobile').focus(); return false;">
+        <i class="fa fa-search"></i><span>Search</span>
     </a>
 </nav>
+
 <script>
-    const nav = document.querySelector('.main-nav');
-    window.addEventListener('scroll', () => { window.scrollY > 50 ? nav.classList.add('scrolled') : nav.classList.remove('scrolled'); });
-    document.addEventListener('DOMContentLoaded', function() { const slides = document.querySelectorAll('.hero-slide'); if (slides.length > 1) { let currentSlide = 0; const showSlide = (index) => slides.forEach((s, i) => s.classList.toggle('active', i === index)); setInterval(() => { currentSlide = (currentSlide + 1) % slides.length; showSlide(currentSlide); }, 5000); } });
+    document.addEventListener('DOMContentLoaded', function() {
+        if (window.innerWidth >= 769) {
+            const desktopContent = document.querySelector('.desktop-only-content');
+            if (desktopContent) desktopContent.style.display = 'block';
+            
+            const mobileGrid = document.querySelector('.category-grid');
+            if(mobileGrid && !document.querySelector('.is_full_page_list')) mobileGrid.style.display = 'none';
+
+            const nav = document.querySelector('.main-nav');
+            window.addEventListener('scroll', () => { window.scrollY > 50 ? nav.classList.add('scrolled') : nav.classList.remove('scrolled'); });
+            
+            const slides = document.querySelectorAll('.hero-slide'); 
+            if (slides.length > 1) { 
+                let currentSlide = 0; 
+                const showSlide = (index) => slides.forEach((s, i) => s.classList.toggle('active', i === index)); 
+                setInterval(() => { 
+                    currentSlide = (currentSlide + 1) % slides.length; 
+                    showSlide(currentSlide); 
+                }, 5000); 
+            }
+        }
+    });
 </script>
 {% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
 {% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
@@ -1039,7 +1091,15 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
     return tmdb_data
 
 def process_movie_list(movie_list):
-    return [{**item, '_id': str(item['_id'])} for item in movie_list]
+    # Ensure no duplicates
+    seen = set()
+    unique_list = []
+    for item in movie_list:
+        if item['_id'] not in seen:
+            unique_list.append({**item, '_id': str(item['_id'])})
+            seen.add(item['_id'])
+    return unique_list
+
 
 # ======================================================================
 # --- Main Flask Routes ---
@@ -1053,13 +1113,14 @@ def home():
         return render_template_string(index_html, movies=process_movie_list(movies_list), query=f'Results for "{query}"', is_full_page_list=True)
     all_badges = sorted([badge for badge in movies.distinct("poster_badge") if badge and badge.strip()])
     limit = 12
+    # For mobile, we will mix these lists. For desktop, they are separate.
     context = {
-        "trending_movies": process_movie_list(list(movies.find({"is_trending": True, "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "latest_movies": process_movie_list(list(movies.find({"type": "movie", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "latest_series": process_movie_list(list(movies.find({"type": "series", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "coming_soon_movies": process_movie_list(list(movies.find({"is_coming_soon": True}).sort('_id', -1).limit(limit))),
-        "recently_added": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(6))),
-        "recently_added_full": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
+        "trending_movies": list(movies.find({"is_trending": True, "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit)),
+        "latest_movies": list(movies.find({"type": "movie", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit)),
+        "latest_series": list(movies.find({"type": "series", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit)),
+        "coming_soon_movies": list(movies.find({"is_coming_soon": True}).sort('_id', -1).limit(limit)),
+        "recently_added": list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(6)),
+        "recently_added_full": list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit)),
         "is_full_page_list": False, "query": "", "all_badges": all_badges
     }
     return render_template_string(index_html, **context)
@@ -1485,4 +1546,3 @@ def telegram_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-```
