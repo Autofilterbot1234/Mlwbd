@@ -182,7 +182,7 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         print(f"FATAL ERROR in post_to_public_channel: {e}")
 
 # ======================================================================
-# --- HTML টেমপ্লেট (অপটিমাইজড) ---
+# --- HTML টেমপ্লেট (চূড়ান্ত সংস্করণ) ---
 # ======================================================================
 index_html = """
 <!DOCTYPE html>
@@ -192,158 +192,102 @@ index_html = """
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
 <title>MovieZone - Your Entertainment Hub</title>
 <style>
-  /* Mobile-First Approach */
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
-  :root { --netflix-red: #E50914; --text-light: #f5f5f5; --text-dark: #a0a0a0; --nav-height: 60px; }
+  :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --text-dark: #a0a0a0; --nav-height: 60px; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Roboto', sans-serif; background-color: var(--netflix-black); color: var(--text-light); overflow-x: hidden; }
   a { text-decoration: none; color: inherit; }
+  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #222; } ::-webkit-scrollbar-thumb { background: #555; } ::-webkit-scrollbar-thumb:hover { background: var(--netflix-red); }
   
-  /* --- BASE & MOBILE STYLES (ডিফল্ট এবং মোবাইল স্টাইল) --- */
-  body { 
-    font-family: 'Roboto', sans-serif; 
-    background-color: #0A0A0A; 
-    color: var(--text-light); 
-    overflow-x: hidden;
-    padding-bottom: var(--nav-height); 
-  }
-  main { padding: 20px 15px; }
-  
-  /* Hiding desktop elements on mobile */
-  .main-nav, .hero-section, .tags-section, .telegram-join-section, .card-info-static, .rating-badge {
-    display: none;
-  }
-  
-  /* Show category title on mobile */
+  /* --- ডেস্কটপ ডিজাইন (Default) --- */
+  .main-nav { position: fixed; top: 0; left: 0; width: 100%; padding: 15px 50px; display: flex; justify-content: space-between; align-items: center; z-index: 100; transition: background-color 0.3s ease; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 10%, rgba(0,0,0,0)); }
+  .main-nav.scrolled { background-color: var(--netflix-black); }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--netflix-red); font-weight: 700; letter-spacing: 1px; }
+  .search-input { background-color: rgba(0,0,0,0.7); border: 1px solid #777; color: var(--text-light); padding: 8px 15px; border-radius: 4px; transition: width 0.3s ease, background-color 0.3s ease; width: 250px; }
+  .search-input:focus { background-color: rgba(0,0,0,0.9); border-color: var(--text-light); outline: none; }
+  .tags-section { padding: 80px 50px 20px 50px; background-color: var(--netflix-black); }
+  .tags-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+  .tag-link { padding: 6px 16px; background-color: rgba(255, 255, 255, 0.1); border: 1px solid #444; border-radius: 50px; font-weight: 500; font-size: 0.85rem; transition: all 0.3s; }
+  .tag-link:hover { background-color: var(--netflix-red); border-color: var(--netflix-red); color: white; }
+  .hero-section { height: 85vh; position: relative; color: white; overflow: hidden; }
+  .hero-slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center top; display: flex; align-items: flex-end; padding: 50px; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: 1; }
+  .hero-slide.active { opacity: 1; z-index: 2; }
+  .hero-slide::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--netflix-black) 10%, transparent 50%), linear-gradient(to right, rgba(0,0,0,0.8) 0%, transparent 60%); }
+  .hero-content { position: relative; z-index: 3; max-width: 50%; }
+  .hero-title { font-family: 'Bebas Neue', sans-serif; font-size: 5rem; font-weight: 700; margin-bottom: 1rem; line-height: 1; }
+  .hero-overview { font-size: 1.1rem; line-height: 1.5; margin-bottom: 1.5rem; max-width: 600px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .hero-buttons .btn { padding: 10px 24px; margin-right: 0.8rem; border: none; border-radius: 4px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
+  .btn.btn-primary { background-color: var(--netflix-red); color: white; } .btn.btn-secondary { background-color: rgba(109, 109, 110, 0.7); color: white; } .btn:hover { opacity: 0.8; }
+  main { padding: 0 50px; }
+  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; }
+  .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
+  .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
+  .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
+  .poster-badge { position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); }
+  .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
+  .rating-badge .fa-star { color: #f5c518; }
+  .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
+  .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
+  .card-info-mobile { display: none; }
+  @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
+  .full-page-grid-container { padding-top: 100px; padding-bottom: 50px; }
+  .full-page-grid-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 30px; }
+  .category-grid, .full-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; }
+  .category-section { margin: 40px 0; }
   .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-  .category-title { font-weight: 700; font-size: 1.2rem; margin: 0; }
-  .see-all-link { color: var(--text-dark); font-weight: 500; font-size: 0.8rem; }
-
-  /* === চূড়ান্ত পরিবর্তন: প্রতি সারিতে ২টি পোস্টার === */
-  .category-grid, .full-page-grid {
-    display: grid;
-    /* প্রতি সারিতে ২টি কলাম দেখানো হবে */
-    grid-template-columns: repeat(2, 1fr); 
-    /* পোস্টারগুলোর মধ্যে উল্লম্ব ও আনুভূমিক দূরত্ব */
-    gap: 25px 15px; 
-  }
+  .category-title { font-family: 'Roboto', sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; }
+  .see-all-link { color: var(--text-dark); font-weight: 700; font-size: 0.9rem; }
+  .bottom-nav { display: none; }
+  .ad-container { margin: 40px 0; display: flex; justify-content: center; align-items: center; }
+  .telegram-join-section { background-color: #181818; padding: 40px 20px; text-align: center; margin: 50px -50px 0px -50px; }
+  .telegram-join-section .telegram-icon { font-size: 4rem; color: #2AABEE; margin-bottom: 15px; } .telegram-join-section h2 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: var(--text-light); margin-bottom: 10px; }
+  .telegram-join-section p { font-size: 1.1rem; color: var(--text-dark); max-width: 600px; margin: 0 auto 25px auto; }
+  .telegram-join-button { display: inline-flex; align-items: center; gap: 10px; background-color: #2AABEE; color: white; padding: 12px 30px; border-radius: 50px; font-size: 1.1rem; font-weight: 700; transition: all 0.2s ease; }
+  .telegram-join-button:hover { transform: scale(1.05); background-color: #1e96d1; } .telegram-join-button i { font-size: 1.3rem; }
   
-  .category-section { margin-top: 30px; }
-  .full-page-grid-container { padding-top: 20px; }
-  .full-page-grid-title { font-size: 1.8rem; margin-bottom: 20px; text-align: center; }
-
-  .movie-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-  .poster-wrapper {
-    position: relative;
-    border: 1.5px solid;
-    border-radius: 8px;
-    padding: 0;
-    width: 100%;
-    aspect-ratio: 2 / 3;
-    margin-bottom: 10px;
-    border-image-slice: 1; 
-    border-image-source: linear-gradient(to right, #f83, #f03, #3cf, #0f3); 
-    animation: neon-glow 2s linear infinite;
-  }
-  @keyframes neon-glow {
-      0%, 100% { box-shadow: 0 0 3px #f83, 0 0 6px #f03, 0 0 9px #3cf; }
-      50% { box-shadow: 0 0 6px #3cf, 0 0 9px #f03, 0 0 12px #f83; }
-  }
-  .movie-poster-container {
-      width: 100%; height: 100%;
-      border-radius: 6px;
-      overflow: hidden;
-  }
-  .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-  .poster-badge {
-      position: absolute;
-      background: linear-gradient(45deg, #03a9f4, #01579b);
-      transform: rotate(-45deg);
-      top: -6px; left: -6px;
-      width: 90px; height: 90px;
-      display: flex; align-items: flex-end; justify-content: center;
-      padding-bottom: 5px; box-sizing: border-box;
-      clip-path: polygon(0 0, 100% 0, 0 100%);
-      color: white; font-weight: bold; font-size: 0.75rem;
-      text-shadow: 1px 1px 2px rgba(0,0,0,0.5); z-index: 5;
-  }
-  .card-info-mobile { display: block; }
-  .new-card-title {
-      color: #00e5ff;
-      font-weight: 500;
-      margin: 0 4px;
-      font-size: 1rem; /* টাইটেলের ফন্ট সাইজ সামান্য বড় করা হয়েছে */
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      line-height: 1.2;
-  }
-  .year-button {
-      background: linear-gradient(90deg, #ff9800, #f44336);
-      color: white; padding: 4px 18px; border-radius: 6px;
-      font-size: 0.85rem; font-weight: 500;
-      display: inline-block; margin-top: 8px;
-  }
-  .bottom-nav {
-      display: flex; position: fixed;
-      bottom: 0; left: 0; right: 0;
-      height: var(--nav-height); background-color: #000;
-      justify-content: space-around; align-items: center; z-index: 200;
-  }
-  .nav-item {
-      display: flex; flex-direction: column; align-items: center;
-      color: var(--text-dark); font-size: 12px; font-weight: 500;
-      flex-grow: 1; padding: 5px 0;
-  }
-  .nav-item i { font-size: 24px; margin-bottom: 4px; }
-  .nav-item.active { color: var(--text-light); }
-  .nav-item.active i { color: #00e5ff; }
-  .nav-item-request {
-      display: flex; justify-content: center; align-items: center;
-      background-color: white; color: black; border-radius: 50%;
-      width: 48px; height: 48px;
-      margin-bottom: 25px; box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
-  }
-  .nav-item-request i { font-size: 28px; margin: 0; }
-
-  /* --- DESKTOP STYLES (ডেস্কটপ স্টাইল) --- */
-  @media (min-width: 769px) {
-      body { background-color: #141414; padding-bottom: 0; }
-      main { padding: 0 50px; }
-      .main-nav, .hero-section, .tags-section, .telegram-join-section { display: flex; }
-      .bottom-nav, .card-info-mobile, .mobile-search-bar { display: none; }
+  /* --- মোবাইল ডিজাইন (<= 768px) --- */
+  @media (max-width: 768px) {
+      body { padding-bottom: var(--nav-height); }
+      .main-nav { padding: 10px 15px; }
+      .logo { font-size: 24px; }
+      .search-input { width: 150px; }
+      main { padding: 0 15px; }
+      .hero-section { height: 60vh; margin: 0 -15px;}
+      .hero-slide { padding: 15px; align-items: center; } 
+      .hero-content { max-width: 90%; text-align: center; } 
+      .hero-title { font-size: 2.8rem; } 
+      .hero-overview { display: none; }
+      .tags-section { padding: 80px 15px 15px 15px; }
+      .tag-link { padding: 6px 15px; font-size: 0.8rem; }
+      .category-section { margin: 25px 0; }
+      .category-title { font-size: 1.2rem; }
+      .full-page-grid-container { padding-top: 80px; padding-bottom: 20px; }
+      .full-page-grid-title { font-size: 1.8rem; }
+      .ad-container { margin: 25px 0; }
+      .telegram-join-section { margin: 50px -15px -30px -15px; display: none; }
       
-      .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-      .category-title { font-size: 1.6rem; }
-      .see-all-link { font-size: 0.9rem; }
-
-      .category-section { margin: 40px 0; }
-      .full-page-grid-container { padding-top: 100px; padding-bottom: 50px; }
-      .full-page-grid-title { font-size: 2.5rem; text-align: left; }
+      /* --- চূড়ান্ত গ্রিড লেআউট (পুরোনো কোডের মতো) --- */
       .category-grid, .full-page-grid {
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 20px 15px;
+          grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+          gap: 20px 12px;
       }
-      .poster-wrapper {
-        border: none; box-shadow: none; animation: none;
-        background-color: #222; margin-bottom: 0;
-        aspect-ratio: auto; overflow: hidden;
+      .card-info-static { display: none; } /* ডেস্কটপ টাইটেল হাইড */
+      .card-info-mobile { display: block; margin-top: 8px; text-align: center; } /* মোবাইল টাইটেল প্রদর্শন */
+      .card-info-mobile-title {
+          color: #e5e5e5;
+          font-weight: 500;
+          font-size: 0.85rem;
+          line-height: 1.3;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
       }
-      .movie-poster-container { aspect-ratio: 2 / 3; }
-      .card-info-static { display: block; padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; }
-      .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
-      .poster-badge {
-          background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px);
-          top: 18px; left: -35px; width: 140px; height: auto;
-          clip-path: none; padding: 4px 0;
-          border: 1px solid rgba(255, 255, 255, 0.2); animation: none;
-      }
-      .rating-badge { display: flex; }
-      @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
+      
+      /* বটম নেভিগেশন */
+      .bottom-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav-height); background-color: #181818; border-top: 1px solid #282828; justify-content: space-around; align-items: center; z-index: 200; }
+      .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-dark); font-size: 10px; flex-grow: 1; padding: 5px 0; transition: color 0.2s ease; }
+      .nav-item i { font-size: 20px; margin-bottom: 4px; } .nav-item.active { color: var(--text-light); } .nav-item.active i { color: var(--netflix-red); }
   }
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
@@ -356,23 +300,18 @@ index_html = """
       <div class="poster-wrapper">
         <div class="movie-poster-container">
            <img class="movie-poster" loading="lazy" src="{{ (m.poster | replace('w500', 'w342')) if m.poster else 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
-           {% if m.is_trending %}
-             <div class="poster-badge">Trending</div>
-           {% elif m.poster_badge %}
-             <div class="poster-badge">{{ m.poster_badge }}</div>
-           {% endif %}
+           {% if m.poster_badge %}<div class="poster-badge" style="font-size: 0.7rem; width: 110px; top:12px; left: -25px;">{{ m.poster_badge }}</div>{% endif %}
            {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
         </div>
+        <!-- ডেস্কটপের জন্য -->
         <div class="card-info-static">
           <h4 class="card-info-title">{{ m.title }}</h4>
           {% if m.release_date %}<p class="card-info-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}
         </div>
       </div>
+      <!-- মোবাইলের জন্য -->
       <div class="card-info-mobile">
-        <h4 class="new-card-title">{{ m.title }}</h4>
-        {% if m.release_date %}
-            <div class="year-button">{{ m.release_date.split('-')[0] }}</div>
-        {% endif %}
+          <h4 class="card-info-mobile-title">{{ m.title }}</h4>
       </div>
     </a>
   {% endmacro %}
@@ -380,13 +319,15 @@ index_html = """
   {% if is_full_page_list %}
     <div class="full-page-grid-container">
         <h2 class="full-page-grid-title">{{ query }}</h2>
-        <div class="full-page-grid">
-            {% for m in movies %}
-                {{ render_movie_card(m) }}
-            {% else %}
-                <p style="grid-column: 1 / -1; text-align:center; color: var(--text-dark); margin-top: 40px;">No content found.</p>
-            {% endfor %}
-        </div>
+        {% if movies|length == 0 %}
+            <p style="text-align:center; color: var(--text-dark); margin-top: 40px;">No content found.</p>
+        {% else %}
+            <div class="full-page-grid">
+                {% for m in movies %}
+                    {{ render_movie_card(m) }}
+                {% endfor %}
+            </div>
+        {% endif %}
     </div>
   {% else %}
     {% if all_badges %}<div class="tags-section"><div class="tags-container">{% for badge in all_badges %}<a href="{{ url_for('movies_by_badge', badge_name=badge) }}" class="tag-link">{{ badge }}</a>{% endfor %}</div></div>{% endif %}
@@ -427,58 +368,25 @@ index_html = """
 </main>
 <nav class="bottom-nav">
     <a href="{{ url_for('home') }}" class="nav-item {% if request.endpoint == 'home' %}active{% endif %}">
-        <i class="fa fa-home"></i><span>Home</span>
+        <i class="fas fa-home"></i><span>Home</span>
     </a>
     <a href="{{ url_for('movies_only') }}" class="nav-item {% if request.endpoint == 'movies_only' %}active{% endif %}">
-        <i class="fa fa-film"></i><span>Movie</span>
-    </a>
-    <a href="{{ url_for('contact') }}" class="nav-item-request">
-        <i class="fa fa-plus"></i>
+        <i class="fas fa-film"></i><span>Movies</span>
     </a>
     <a href="{{ url_for('webseries') }}" class="nav-item {% if request.endpoint == 'webseries' %}active{% endif %}">
-        <i class="fa fa-tv"></i><span>Web Series</span>
+        <i class="fas fa-tv"></i><span>Series</span>
     </a>
-    <a href="#" class="nav-item" onclick="document.querySelector('.search-input-mobile').focus(); return false;">
-        <i class="fa fa-search"></i><span>Search</span>
+    <a href="{{ url_for('genres_page') }}" class="nav-item {% if request.endpoint == 'genres_page' %}active{% endif %}">
+        <i class="fas fa-layer-group"></i><span>Genres</span>
+    </a>
+    <a href="{{ url_for('contact') }}" class="nav-item {% if request.endpoint == 'contact' %}active{% endif %}">
+        <i class="fas fa-envelope"></i><span>Request</span>
     </a>
 </nav>
-<!-- Mobile search bar -->
-<div style="position:fixed; top:0; left:0; right:0; padding:10px; background:#111; z-index: 210; transition: top 0.3s ease-in-out;" class="mobile-search-bar">
-    <form method="GET" action="/"><input type="search" name="q" class="search-input-mobile" placeholder="Search movies & series..." value="{{ query|default('') }}" style="width:100%; padding:12px; border-radius: 20px; border: 1px solid #333; background: #222; color: #fff; font-size:1rem;"></form>
-</div>
-
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const mainContent = document.querySelector('main');
-        if (window.innerWidth < 769) {
-            mainContent.style.paddingTop = '70px'; // Add padding to avoid overlap with search bar
-            const searchBar = document.querySelector('.mobile-search-bar');
-            let lastScrollTop = 0;
-            window.addEventListener('scroll', function() {
-                let scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-                if (scrollTop > lastScrollTop && scrollTop > 60){ // Scroll Down
-                    searchBar.style.top = '-80px';
-                } else { // Scroll Up
-                    searchBar.style.top = '0';
-                }
-                lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
-            }, false);
-        }
-
-        if (window.innerWidth >= 769) {
-            const nav = document.querySelector('.main-nav');
-            window.addEventListener('scroll', () => { window.scrollY > 50 ? nav.classList.add('scrolled') : nav.classList.remove('scrolled'); });
-            const slides = document.querySelectorAll('.hero-slide'); 
-            if (slides.length > 1) { 
-                let currentSlide = 0; 
-                const showSlide = (index) => slides.forEach((s, i) => s.classList.toggle('active', i === index)); 
-                setInterval(() => { 
-                    currentSlide = (currentSlide + 1) % slides.length; 
-                    showSlide(currentSlide); 
-                }, 5000); 
-            }
-        }
-    });
+    const nav = document.querySelector('.main-nav');
+    window.addEventListener('scroll', () => { window.scrollY > 50 ? nav.classList.add('scrolled') : nav.classList.remove('scrolled'); });
+    document.addEventListener('DOMContentLoaded', function() { const slides = document.querySelectorAll('.hero-slide'); if (slides.length > 1) { let currentSlide = 0; const showSlide = (index) => slides.forEach((s, i) => s.classList.toggle('active', i === index)); setInterval(() => { currentSlide = (currentSlide + 1) % slides.length; showSlide(currentSlide); }, 5000); } });
 </script>
 {% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
 {% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
@@ -532,12 +440,11 @@ detail_html = """
   .ad-container { margin: 30px 0; text-align: center; }
   .related-section-container { padding: 40px 0; background-color: #181818; }
   .related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; padding: 0 50px; }
-  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; will-change: transform; }
+  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; }
   .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
   .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
   .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
-  @keyframes rgb-glow { 0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; } 33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; } 66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; } }
-  .poster-badge { position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); animation: rgb-glow 3s linear infinite; }
+  .poster-badge { position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); }
   .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
   .rating-badge .fa-star { color: #f5c518; }
   .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
@@ -549,9 +456,7 @@ detail_html = """
   .action-buttons-container { flex-direction: column; }
   .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-buttons { width: 100%; justify-content: space-between; } .episode-button { flex-grow: 1; justify-content: center; }
   .section-title { margin-left: 15px !important; } .related-section-container { padding: 20px 0; }
-  .related-grid { grid-template-columns: repeat(2, 1fr); gap: 15px 10px; padding: 0 15px; } 
-  .card-info-static { display:none; }
-  }
+  .related-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; padding: 0 15px; } }
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
 </head>
@@ -560,7 +465,7 @@ detail_html = """
   <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
     <div class="poster-wrapper">
       <div class="movie-poster-container">
-        <img class="movie-poster" loading="lazy" src="{{ (m.poster | replace('w500', 'w342')) if m.poster else 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
+        <img class="movie-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
         {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
         {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
       </div>
@@ -642,7 +547,7 @@ detail_html = """
                       <a href="{{ url_for('go_to_link', url=link.url) }}" target="_blank" class="episode-button download"><i class="fas fa-download"></i> Download ({{link.lang}})</a>
                     {% endfor %}
                     {% if ep.message_id %}
-                      <a href="https.t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get</a>
+                      <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button telegram"><i class="fa-brands fa-telegram"></i> Get</a>
                     {% endif %}
                 </div>
               </div>
@@ -1093,7 +998,7 @@ def home():
         "coming_soon_movies": process_movie_list(list(movies.find({"is_coming_soon": True}).sort('_id', -1).limit(limit))),
         "recently_added": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(6))),
         "recently_added_full": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "is_full_page_list": False, "query": query, "all_badges": all_badges
+        "is_full_page_list": False, "query": "", "all_badges": all_badges
     }
     return render_template_string(index_html, **context)
 
