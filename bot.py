@@ -218,31 +218,17 @@ index_html = """
   .hero-buttons .btn { padding: 10px 24px; margin-right: 0.8rem; border: none; border-radius: 4px; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
   .btn.btn-primary { background-color: var(--netflix-red); color: white; } .btn.btn-secondary { background-color: rgba(109, 109, 110, 0.7); color: white; } .btn:hover { opacity: 0.8; }
   main { padding: 0 50px; }
-  .movie-card { 
-    display: block; 
-    cursor: pointer; 
-    transition: transform 0.3s ease;
-    will-change: transform; /* পারফরম্যান্সের জন্য যোগ করা হয়েছে */
-  }
+  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; will-change: transform; /* পারফরম্যান্সের জন্য যোগ করা হয়েছে */ }
   .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
   .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
   .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
-  @keyframes rgb-glow {
-    0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; }
-    33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; }
-    66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; }
-  }
-  .poster-badge {
-    position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5;
-    font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2);
-    animation: rgb-glow 3s linear infinite;
-  }
+  .poster-badge { position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2); }
   .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
   .rating-badge .fa-star { color: #f5c518; }
   .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
   .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
+  .card-info-mobile { display: none; }
   @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
   .full-page-grid-container { padding-top: 100px; padding-bottom: 50px; }
   .full-page-grid-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 30px; }
@@ -253,24 +239,111 @@ index_html = """
   .see-all-link { color: var(--text-dark); font-weight: 700; font-size: 0.9rem; }
   .bottom-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav-height); background-color: #181818; border-top: 1px solid #282828; justify-content: space-around; align-items: center; z-index: 200; }
   .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-dark); font-size: 10px; flex-grow: 1; padding: 5px 0; transition: color 0.2s ease; }
-  .nav-item i { font-size: 20px; margin-bottom: 4px; } .nav-item.active { color: var(--text-light); } .nav-item.active i { color: var(--netflix-red); }
+  .nav-item i { font-size: 20px; margin-bottom: 4px; } .nav-item.active { color: var(--netflix-red); }
   .ad-container { margin: 40px 0; display: flex; justify-content: center; align-items: center; }
   .telegram-join-section { background-color: #181818; padding: 40px 20px; text-align: center; margin: 50px -50px -50px -50px; }
   .telegram-join-section .telegram-icon { font-size: 4rem; color: #2AABEE; margin-bottom: 15px; } .telegram-join-section h2 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: var(--text-light); margin-bottom: 10px; }
   .telegram-join-section p { font-size: 1.1rem; color: var(--text-dark); max-width: 600px; margin: 0 auto 25px auto; }
   .telegram-join-button { display: inline-flex; align-items: center; gap: 10px; background-color: #2AABEE; color: white; padding: 12px 30px; border-radius: 50px; font-size: 1.1rem; font-weight: 700; transition: all 0.2s ease; }
   .telegram-join-button:hover { transform: scale(1.05); background-color: #1e96d1; } .telegram-join-button i { font-size: 1.3rem; }
+  
+  /* =================================================================== */
+  /* --- START: NEW MOBILE DESIGN STYLES (AS PER SCREENSHOT) --- */
+  /* =================================================================== */
   @media (max-width: 768px) {
       body { padding-bottom: var(--nav-height); } .main-nav { padding: 10px 15px; } main { padding: 0 15px; } .logo { font-size: 24px; } .search-input { width: 150px; }
-      .tags-section { padding: 80px 15px 15px 15px; } .tag-link { padding: 6px 15px; font-size: 0.8rem; } .hero-section { height: 60vh; margin: 0 -15px;}
-      .hero-slide { padding: 15px; align-items: center; } .hero-content { max-width: 90%; text-align: center; } .hero-title { font-size: 2.8rem; } .hero-overview { display: none; }
+      .tags-section { padding: 80px 15px 15px 15px; } .tag-link { padding: 6px 15px; font-size: 0.8rem; } .hero-section { display: none; } /* Hide hero for new mobile layout */
       .category-section { margin: 25px 0; } .category-title { font-size: 1.2rem; }
-      .category-grid, .full-page-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; }
       .full-page-grid-container { padding-top: 80px; } .full-page-grid-title { font-size: 1.8rem; }
       .bottom-nav { display: flex; } .ad-container { margin: 25px 0; }
       .telegram-join-section { margin: 50px -15px -30px -15px; }
       .telegram-join-section h2 { font-size: 2rem; } .telegram-join-section p { font-size: 1rem; }
+
+      /* New Grid Layout */
+      .category-grid, .full-page-grid {
+          grid-template-columns: repeat(3, 1fr);
+          gap: 25px 15px;
+      }
+
+      /* Disable hover effects on mobile */
+      .movie-card:hover { transform: none; box-shadow: none; }
+      .movie-card:hover .movie-poster { transform: none; }
+
+      /* Card Styling */
+      .movie-card {
+          text-align: center;
+      }
+      .poster-wrapper {
+          border: 1.5px solid #ff1493; /* Neon Pink/Magenta */
+          box-shadow: 0 0 5px #ff1493, 0 0 10px rgba(255, 20, 147, 0.7);
+          background-color: transparent;
+          border-radius: 8px;
+          padding: 0;
+      }
+      .movie-poster-container {
+          border-radius: 6px;
+      }
+      .rating-badge {
+          display: none; /* Hide rating badge on mobile */
+      }
+
+      /* New Trending Badge Style */
+      .poster-badge {
+          background: linear-gradient(45deg, #03a9f4, #01579b);
+          transform: rotate(-45deg);
+          top: -5px;
+          left: -5px;
+          width: 90px;
+          height: 90px;
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          padding-bottom: 5px;
+          box-sizing: border-box;
+          clip-path: polygon(0 0, 100% 0, 0 100%);
+          color: white;
+          font-weight: bold;
+          font-size: 0.75rem;
+          text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+          /* Override defaults */
+          animation: none;
+          border: none;
+          backdrop-filter: none;
+      }
+
+      /* Hide Desktop Info Box and Show Mobile one */
+      .card-info-static {
+          display: none;
+      }
+      .card-info-mobile {
+          display: block;
+      }
+      .new-card-title {
+          color: #00e5ff; /* Bright Cyan */
+          font-weight: 500;
+          text-align: center;
+          margin: 10px 4px 0 4px;
+          font-size: 1rem;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+      }
+      .year-button {
+          background: linear-gradient(90deg, #ff9800, #f44336); /* Orange to Red */
+          color: white;
+          padding: 4px 20px;
+          border-radius: 6px;
+          font-size: 0.9rem;
+          font-weight: 500;
+          display: inline-block;
+          margin-top: 8px;
+          margin-bottom: 5px;
+      }
   }
+  /* =================================================================== */
+  /* --- END: NEW MOBILE DESIGN STYLES --- */
+  /* =================================================================== */
+
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
 </head>
@@ -281,15 +354,24 @@ index_html = """
     <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
       <div class="poster-wrapper">
         <div class="movie-poster-container">
-           <!-- ইমেজ সোর্স অপটিমাইজ করা হয়েছে -->
            <img class="movie-poster" loading="lazy" src="{{ (m.poster | replace('w500', 'w342')) if m.poster else 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
-           {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
+           {% if m.is_trending %}
+             <div class="poster-badge">Trending</div>
+           {% endif %}
            {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
         </div>
+        {# This is the default info box for DESKTOP #}
         <div class="card-info-static">
           <h4 class="card-info-title">{{ m.title }}</h4>
           {% if m.release_date %}<p class="card-info-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}
         </div>
+      </div>
+      {# This is the new info box for MOBILE #}
+      <div class="card-info-mobile">
+        <h4 class="new-card-title">{{ m.title }}</h4>
+        {% if m.release_date %}
+            <div class="year-button">{{ m.release_date.split('-')[0] }}</div>
+        {% endif %}
       </div>
     </a>
   {% endmacro %}
@@ -349,16 +431,16 @@ index_html = """
         <i class="fas fa-home"></i><span>Home</span>
     </a>
     <a href="{{ url_for('movies_only') }}" class="nav-item {% if request.endpoint == 'movies_only' %}active{% endif %}">
-        <i class="fas fa-film"></i><span>Movies</span>
-    </a>
-    <a href="{{ url_for('webseries') }}" class="nav-item {% if request.endpoint == 'webseries' %}active{% endif %}">
-        <i class="fas fa-tv"></i><span>Series</span>
-    </a>
-    <a href="{{ url_for('genres_page') }}" class="nav-item {% if request.endpoint == 'genres_page' %}active{% endif %}">
-        <i class="fas fa-layer-group"></i><span>Genres</span>
+        <i class="fas fa-film"></i><span>Movie</span>
     </a>
     <a href="{{ url_for('contact') }}" class="nav-item {% if request.endpoint == 'contact' %}active{% endif %}">
-        <i class="fas fa-envelope"></i><span>Request</span>
+        <i class="fas fa-plus-circle"></i><span>Request</span>
+    </a>
+    <a href="{{ url_for('webseries') }}" class="nav-item {% if request.endpoint == 'webseries' %}active{% endif %}">
+        <i class="fas fa-tv"></i><span>Web Series</span>
+    </a>
+    <a href="{{ url_for('home') }}" class="nav-item">
+        <i class="fas fa-search"></i><span>Search</span>
     </a>
 </nav>
 <script>
@@ -1403,3 +1485,4 @@ def telegram_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+```
