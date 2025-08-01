@@ -3,3 +3,5 @@ requests
 pymongo
 APScheduler
 gunicorn
+beautifulsoup4
+lxml
