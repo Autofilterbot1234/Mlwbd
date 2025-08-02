@@ -21,6 +21,10 @@ if not MONGO_URI or not BOT_TOKEN:
     print("FATAL: MONGO_URI and BOT_TOKEN environment variables are required.")
     sys.exit(1)
 
+# --- ★★★ মাস্টার পাসওয়ার্ড (এটি আপনার পছন্দের গোপন পাসওয়ার্ড দিয়ে পরিবর্তন করুন) ★★★ ---
+# নিজেকে প্রথম অ্যাডমিন বানানোর জন্য এই গোপন পাসওয়ার্ডটি ব্যবহার করুন।
+MASTER_PASSWORD = "change_this_secret_password"
+
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 app = Flask(__name__)
 
@@ -37,61 +41,44 @@ except Exception as e:
 # --- Configuration Management ---
 # ======================================================================
 bot_config = {}
-user_states = {} # ব্যবহারকারীর বর্তমান অবস্থা ট্র্যাক করার জন্য
+user_states = {} 
 
-# --- যে কী-গুলো ব্যবহারকারী বট থেকে পরিবর্তন করতে পারবেন ---
 ALLOWED_SETTINGS = {
-    "PUBLIC_CHANNEL_ID": "📢 Public Channel ID",
-    "ADMIN_CHANNEL_ID": "🔒 Admin Files Channel ID",
-    "BOT_USERNAME": "🤖 Bot Username",
-    "ADMIN_USERNAME": "🔑 Admin Login Username",
-    "ADMIN_PASSWORD": "🔑 Admin Login Password",
-    "ADMIN_USER_IDS": "👮 Admin User IDs",
-    "MAIN_CHANNEL_LINK": "🔗 Main Channel Link",
-    "UPDATE_CHANNEL_LINK": "🔗 Update Channel Link",
-    "DEVELOPER_USER_LINK": "🔗 Developer Link",
-    "WEBSITE_URL": "🌐 Website URL",
+    "PUBLIC_CHANNEL_ID": "📢 Public Channel ID", "ADMIN_CHANNEL_ID": "🔒 Admin Files Channel ID",
+    "BOT_USERNAME": "🤖 Bot Username", "ADMIN_USERNAME": "🔑 Admin Login Username",
+    "ADMIN_PASSWORD": "🔑 Admin Login Password", "ADMIN_USER_IDS": "👮 Admin User IDs",
+    "MAIN_CHANNEL_LINK": "🔗 Main Channel Link", "UPDATE_CHANNEL_LINK": "🔗 Update Channel Link",
+    "DEVELOPER_USER_LINK": "🔗 Developer Link", "WEBSITE_URL": "🌐 Website URL",
     "TMDB_API_KEY": "🎬 TMDB API Key",
 }
-
 AD_SETTINGS = {
-    "popunder_code": "Ad: Pop-Under",
-    "social_bar_code": "Ad: Social Bar",
-    "banner_ad_code": "Ad: Banner",
-    "native_banner_code": "Ad: Native Banner",
-    "link_page_ad_1": "Ad: Link Page 1",
-    "link_page_ad_2": "Ad: Link Page 2",
+    "popunder_code": "Ad: Pop-Under", "social_bar_code": "Ad: Social Bar",
+    "banner_ad_code": "Ad: Banner", "native_banner_code": "Ad: Native Banner",
+    "link_page_ad_1": "Ad: Link Page 1", "link_page_ad_2": "Ad: Link Page 2",
 }
 
 def load_or_refresh_config():
-    """
-    ডাটাবেস থেকে সেটিংস্ লোড করে এবং গ্লোবাল bot_config ডিকশনারিতে রাখে।
-    যদি ডাটাবেসে কোনো সেটিং না পাওয়া যায়, তাহলে এনভায়রনমেন্ট ভেরিয়েবল থেকে নেওয়ার চেষ্টা করে।
-    """
     global bot_config
     db_settings = settings.find_one() or {}
-    
-    # এনভায়রনমেন্ট ভেরিয়েবল থেকে ডিফল্ট মান লোড করুন
     env_settings = {key: os.environ.get(key) for key in ALLOWED_SETTINGS.keys()}
-
-    # প্রথমে ডাটাবেসের মান, তারপর এনভায়রনমেন্টের মান ব্যবহার করুন
     temp_config = {**env_settings, **db_settings}
     
-    # ADMIN_USER_IDS স্ট্রিংকে লিস্টে পরিণত করুন
-    if temp_config.get("ADMIN_USER_IDS") and isinstance(temp_config.get("ADMIN_USER_IDS"), str):
-        temp_config["ADMIN_USER_IDS"] = [uid.strip() for uid in temp_config["ADMIN_USER_IDS"].split(',')]
+    admin_ids_val = temp_config.get("ADMIN_USER_IDS")
+    if admin_ids_val and isinstance(admin_ids_val, str):
+        temp_config["ADMIN_USER_IDS"] = [uid.strip() for uid in admin_ids_val.split(',') if uid.strip()]
+    elif not isinstance(admin_ids_val, list):
+        temp_config["ADMIN_USER_IDS"] = []
     
     bot_config = temp_config
     print("SUCCESS: Configuration loaded/refreshed from database.")
 
-# অ্যাপ চালু হওয়ার সময় প্রথমবার কনফিগারেশন লোড করুন
 load_or_refresh_config()
 
 # ======================================================================
 # --- Authentication & Helper Functions ---
 # ======================================================================
 def check_auth(username, password):
-    return username == bot_config.get("ADMIN_USERNAME") and password == bot_config.get("ADMIN_PASSWORD")
+    return username == bot_config.get("ADMIN_USERNAME", "") and password == bot_config.get("ADMIN_PASSWORD", "")
 
 def authenticate():
     return Response('Could not verify your access level.', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
@@ -140,149 +127,6 @@ def parse_links_from_string(link_string: str) -> list:
         else:
             links.append({'lang': 'Link', 'url': part})
     return links
-    
-# ======================================================================
-# --- Advanced Function for Posting to Public Channel ---
-# ======================================================================
-def post_to_public_channel(content_id, post_type='content', season_num=None):
-    PUBLIC_CHANNEL_ID = bot_config.get("PUBLIC_CHANNEL_ID")
-    WEBSITE_URL = bot_config.get("WEBSITE_URL")
-    BOT_USERNAME = bot_config.get("BOT_USERNAME")
-    
-    if not PUBLIC_CHANNEL_ID or not WEBSITE_URL or not BOT_USERNAME:
-        print("WARNING: PUBLIC_CHANNEL_ID, WEBSITE_URL or BOT_USERNAME is not set in config. Skipping public post.")
-        return
-
-    try:
-        content = movies.find_one({"_id": ObjectId(content_id)})
-        if not content:
-            print(f"ERROR: Could not find content with ID {content_id} to post.")
-            return
-
-        title = content.get('title', 'No Title')
-        content_type_str = content.get('type', 'movie').title()
-        poster_url = content.get('poster')
-        genres = content.get('genres', [])
-        rating = content.get('vote_average')
-        release_date = content.get('release_date')
-        cast = content.get('cast', [])
-        runtime = content.get('runtime')
-        trailer_key = content.get('trailer_key')
-        
-        escaped_title = escape_markdown(title)
-        
-        if post_type == 'season_pack' and season_num:
-            caption_parts = [f"📺 *{escaped_title}* \\- *Season {season_num} Pack Added* 🔥"]
-        elif content_type_str == 'Series':
-            caption_parts = [f"📺 *New Series Added:* {escaped_title}"]
-        else:
-            caption_parts = [f"🎬 *New Movie Added:* {escaped_title}"]
-
-        if release_date:
-            year = release_date.split('-')[0]
-            caption_parts.append(f"🗓️ *Year:* {escape_markdown(year)}")
-
-        if runtime and content_type_str == 'Movie':
-             caption_parts.append(f"⏳ *Runtime:* {runtime} minutes")
-
-        if genres:
-            escaped_genres = escape_markdown(", ".join(genres))
-            caption_parts.append(f"🎭 *Genre:* {escaped_genres}")
-        
-        available_langs = set(content.get('languages', []))
-        if post_type == 'season_pack' and season_num:
-            pack = next((p for p in content.get('season_packs', []) if p['season'] == season_num), None)
-            if pack:
-                for link in pack.get('watch_links', []) + pack.get('download_links', []):
-                    lang = link.get('lang', '').strip()
-                    if lang: available_langs.add(lang.title())
-        elif content_type_str == 'Movie':
-             for link in content.get('watch_links', []) + content.get('download_links', []):
-                 lang = link.get('lang', '').strip()
-                 if lang: available_langs.add(lang.title())
-        
-        if available_langs:
-            caption_parts.append(f"🗣️ *Language:* {escape_markdown(', '.join(sorted(list(available_langs))))}")
-
-        if cast:
-            escaped_cast = escape_markdown(", ".join(cast))
-            caption_parts.append(f"👥 *Cast:* {escaped_cast}")
-
-        if rating and float(rating) > 0:
-            escaped_rating = escape_markdown(f"{rating:.1f}/10")
-            caption_parts.append(f"⭐ *Rating:* {escaped_rating}")
-
-        hashtags = [f"#{g.replace(' ', '').replace('-', '')}" for g in genres]
-        if release_date:
-            year_for_hashtag = release_date.split('-')[0]
-            hashtags.append(f"#{content_type_str}{year_for_hashtag}")
-        caption_parts.append("\n" + " ".join(hashtags))
-        
-        bot_username_clean = BOT_USERNAME.replace('https://t.me/', '').split('?')[0]
-        caption_parts.append(f"\n*Join @{bot_username_clean} for more\\!*")
-
-        caption = "\n\n".join(caption_parts)
-
-        with app.app_context():
-            website_link = f"{WEBSITE_URL.rstrip('/')}{url_for('movie_detail', movie_id=str(content_id))}"
-        
-        keyboard_buttons = []
-        
-        row1 = [{"text": "🌐 Watch on Website", "url": website_link}]
-        if trailer_key:
-            row1.append({"text": "🎬 Watch Trailer", "url": f"https://www.youtube.com/watch?v={trailer_key}"})
-        keyboard_buttons.append(row1)
-
-        has_telegram_files = False
-        if content.get('files') or any(ep.get('message_id') for ep in content.get('episodes', [])) or any(p.get('message_id') for p in content.get('season_packs', [])):
-            has_telegram_files = True
-
-        if has_telegram_files:
-            bot_link = f"https://t.me/{bot_username_clean}?start={str(content_id)}"
-            keyboard_buttons.append([{"text": "🤖 Get Files From Bot", "url": bot_link}])
-
-        keyboard = {"inline_keyboard": keyboard_buttons}
-
-        if poster_url:
-            payload = {'chat_id': PUBLIC_CHANNEL_ID, 'photo': poster_url, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
-            response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
-        else:
-            payload = {'chat_id': PUBLIC_CHANNEL_ID, 'text': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
-            response = requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
-
-        if response.status_code == 200:
-            print(f"SUCCESS: Successfully posted '{title}' (Type: {post_type}) to public channel.")
-        else:
-            print(f"ERROR: Failed to post to public channel. Status: {response.status_code}, Response: {response.text}")
-
-    except Exception as e:
-        print(f"FATAL ERROR in post_to_public_channel: {e}")
-
-# ======================================================================
-# --- Scheduled Job for Reposting Old Content ---
-# ======================================================================
-def repost_old_content_job():
-    print(f"[{datetime.now()}] --- Running scheduled job: Repost Old Content ---")
-    try:
-        ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
-        pipeline = [
-            {'$match': {'is_coming_soon': {'$ne': True}, '$or': [{'last_reposted_at': {'$exists': False}}, {'last_reposted_at': {'$lt': ninety_days_ago}}]}},
-            {'$sample': {'size': 1}}
-        ]
-        old_content_cursor = movies.aggregate(pipeline)
-        old_content_to_post = next(old_content_cursor, None)
-
-        if old_content_to_post:
-            content_id = old_content_to_post['_id']
-            title = old_content_to_post.get('title', 'N/A')
-            print(f"SUCCESS: Found old content to repost: '{title}' (ID: {content_id}).")
-            post_to_public_channel(content_id)
-            movies.update_one({'_id': content_id}, {'$set': {'last_reposted_at': datetime.now(timezone.utc)}})
-            print(f"SUCCESS: Updated 'last_reposted_at' for '{title}'.")
-        else:
-            print("INFO: No suitable old content found to repost at this time. Skipping.")
-    except Exception as e:
-        print(f"FATAL ERROR in repost_old_content_job: {e}")
 
 # ======================================================================
 # --- HTML Templates ---
@@ -1284,31 +1128,38 @@ def find_or_create_series(user_title, year, badge, chat_id):
         "created_at": datetime.now(timezone.utc)
     }
     
-    result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"}, {"$set": series_doc}, upsert=True)
+    result = movies.update_one({"tmdb_id": tmdb_data.get("tmdb_id"), "type": "series"}, {"$set": series_doc}, upsert=True)
     
-    if result.upserted_id:
-        post_to_public_channel(result.upserted_id, post_type='content')
-        print(f"SUCCESS: Created new series '{user_title}' and posted to channel.")
+    upserted_id = result.upserted_id
+    if not upserted_id:
+        # If the document was updated, we need to find its ID
+        created_series = movies.find_one({"tmdb_id": tmdb_data.get("tmdb_id"), "type": "series"})
+        if created_series:
+            upserted_id = created_series['_id']
+
+    if upserted_id:
+        post_to_public_channel(upserted_id, post_type='content')
+        print(f"SUCCESS: Created/updated series '{user_title}' and posted to channel.")
         requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully created series page for `{user_title}`.", 'parse_mode': 'Markdown'})
     
-    return movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"})
+    return movies.find_one({"tmdb_id": tmdb_data.get("tmdb_id"), "type": "series"})
 
 # ======================================================================
-# --- Webhook Route with Menu-based System ---
+# --- Webhook Route (সম্পূর্ণ নতুন এবং নিরাপদ সংস্করণ) ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
 
-    # --- Callback Query Handler (বাটনে ক্লিক করলে এটি কাজ করবে) ---
+    # --- Callback Query Handler ---
     if 'callback_query' in data:
         callback_query = data['callback_query']
         user_id = callback_query['from']['id']
         chat_id = callback_query['message']['chat']['id']
         callback_data = callback_query['data']
         message_id = callback_query['message']['message_id']
-
-        ADMIN_USER_IDS = bot_config.get("ADMIN_USER_IDS", [])
+        
+        ADMIN_USER_IDS = bot_config.get("ADMIN_USER_IDS") or []
         if str(user_id) not in ADMIN_USER_IDS:
             requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", json={'callback_query_id': callback_query['id'], 'text': 'You are not authorized.', 'show_alert': True})
             return jsonify(status='ok')
@@ -1323,18 +1174,36 @@ def telegram_webhook():
         
         return jsonify(status='ok')
 
-    # --- Message Handler (সাধারণ মেসেজ ও কমান্ডের জন্য) ---
+    # --- Message Handler ---
     if 'message' in data:
         message = data['message']
         user_id = message['from']['id']
         chat_id = message['chat']['id']
         text = message.get('text', '').strip()
 
-        ADMIN_USER_IDS = bot_config.get("ADMIN_USER_IDS", [])
+        ADMIN_USER_IDS = bot_config.get("ADMIN_USER_IDS") or []
 
+        # --- মাস্টার অ্যাডমিন সেটআপ কমান্ড ---
+        if text.startswith('/setadmin '):
+            if not ADMIN_USER_IDS:
+                try:
+                    password_attempt = text.split(' ', 1)[1]
+                    if password_attempt == MASTER_PASSWORD:
+                        settings.update_one({}, {"$set": {"ADMIN_USER_IDS": str(user_id)}}, upsert=True)
+                        load_or_refresh_config()
+                        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Success! You are now the master admin. Your ID `{user_id}` has been set."})
+                    else:
+                        requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Incorrect master password."})
+                except IndexError:
+                    requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "Usage: /setadmin <master_password>"})
+            else:
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "⚠️ Master admin is already set. Use the /settings menu to add more admins."})
+            return jsonify(status='ok')
+
+        # --- সাধারণ ব্যবহারকারীর জন্য স্টার্ট কমান্ড ---
         if text.startswith('/start'):
             payload_str = text.split(' ', 1)[-1]
-            if payload_str != '/start':
+            if payload_str != '/start' and payload_str != text:
                 try:
                     parts = payload_str.split('_')
                     movie_id_str = parts[0]
@@ -1373,9 +1242,11 @@ def telegram_webhook():
                  requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_text, 'disable_web_page_preview': 'true'})
             return jsonify(status='ok')
 
+        # --- অ্যাডমিন ছাড়া বাকিদের উপেক্ষা করুন ---
         if str(user_id) not in ADMIN_USER_IDS:
             return jsonify(status='ok')
 
+        # --- নতুন সেটিংস্ মান গ্রহণ এবং সেভ ---
         if user_id in user_states and user_states[user_id]['action'] == 'awaiting_value':
             state = user_states.pop(user_id)
             key = state['key']
@@ -1388,7 +1259,8 @@ def telegram_webhook():
             except Exception as e:
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Error updating setting: {e}"})
             return jsonify(status='ok')
-
+            
+        # --- অ্যাডমিন কমান্ডগুলো ---
         if text == '/settings':
             main_keys = list(ALLOWED_SETTINGS.keys())
             main_buttons = []
@@ -1409,7 +1281,8 @@ def telegram_webhook():
                 ad_buttons.append(row)
             ad_keyboard = {"inline_keyboard": ad_buttons}
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "💰 *Advertisement Settings*\n\nSelect an ad setting to update:", 'reply_markup': json.dumps(ad_keyboard), 'parse_mode': 'Markdown'})
-
+            return jsonify(status='ok')
+            
         elif text == '/view_settings':
             message_parts = ["*Current Bot & Ad Settings* ⚙️\n\n"]
             combined_settings = {**ALLOWED_SETTINGS, **AD_SETTINGS}
@@ -1423,6 +1296,7 @@ def telegram_webhook():
                     value = str(value)[:50] + '... (Too long)'
                 message_parts.append(f"*{name}* (`{key}`):\n`{value}`\n")
             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': '\n'.join(message_parts), 'parse_mode': 'Markdown'})
+            return jsonify(status='ok')
 
         elif text.startswith('/add '):
             try:
@@ -1447,7 +1321,7 @@ def telegram_webhook():
                 tmdb_data.pop('tmdb_title', None)
                 movie_doc = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
                 
-                existing_movie = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "movie"})
+                existing_movie = movies.find_one({"tmdb_id": tmdb_data.get("tmdb_id"), "type": "movie"})
                 if existing_movie:
                     movies.update_one({"_id": existing_movie['_id']}, {"$set": movie_doc})
                     content_id_to_post = existing_movie['_id']
@@ -1459,6 +1333,7 @@ def telegram_webhook():
             except Exception as e:
                 print(f"Error in /add command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/add Movie (Year) [Lang] | Watch Links | Download Links`"})
+            return jsonify(status='ok')
 
         elif text.startswith('/addep '):
             try:
@@ -1487,6 +1362,7 @@ def telegram_webhook():
             except Exception as e:
                 print(f"Error in /addep command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addep Series (Year) [Lang] | S01E01 | Watch Links | Download Links`"})
+            return jsonify(status='ok')
 
         elif text.startswith('/addpack '):
             try:
@@ -1515,6 +1391,7 @@ def telegram_webhook():
             except Exception as e:
                 print(f"Error in /addpack command: {e}")
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addpack Series (Year) [Lang] | S01 | Watch Links | Download Links`"})
+            return jsonify(status='ok')
 
     return jsonify(status='ok')
 
