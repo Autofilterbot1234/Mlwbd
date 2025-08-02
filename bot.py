@@ -7,7 +7,12 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta  # timedelta যোগ করা হয়েছে
+
+# --- নতুন ইম্পোর্ট ---
+import atexit
+from apscheduler.schedulers.background import BackgroundScheduler
+# --------------------
 
 # ======================================================================
 # --- Environment Variables ---
@@ -220,6 +225,61 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
     except Exception as e:
         print(f"FATAL ERROR in post_to_public_channel: {e}")
 
+# ======================================================================
+# --- Scheduled Job for Reposting Old Content (নতুন ফাংশন) ---
+# ======================================================================
+def repost_old_content_job():
+    """
+    This job finds a random old movie/series that hasn't been reposted recently
+    and posts it to the public channel.
+    """
+    print(f"[{datetime.now()}] --- Running scheduled job: Repost Old Content ---")
+    try:
+        # আমরা এমন কন্টেন্ট খুঁজব যা গত ৯০ দিনে রিপোস্ট করা হয়নি
+        ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
+
+        # এমন কন্টেন্ট খুঁজে বের করার জন্য কোয়েরি যা রিপোস্ট করার উপযুক্ত
+        pipeline = [
+            {
+                '$match': {
+                    'is_coming_soon': {'$ne': True}, # 'Coming Soon' আইটেম বাদ দিন
+                    '$or': [
+                        {'last_reposted_at': {'$exists': False}}, # আগে কখনো রিপোস্ট হয়নি
+                        {'last_reposted_at': {'$lt': ninety_days_ago}} # অথবা ৯০ দিনের বেশি আগে রিপোস্ট হয়েছে
+                    ]
+                }
+            },
+            {
+                '$sample': {'size': 1} # র‍্যান্ডমভাবে একটি ডকুমেন্ট সিলেক্ট করুন
+            }
+        ]
+
+        # অ্যাগ্রিগেশন চালান
+        old_content_cursor = movies.aggregate(pipeline)
+        old_content_to_post = next(old_content_cursor, None)
+
+        if old_content_to_post:
+            content_id = old_content_to_post['_id']
+            title = old_content_to_post.get('title', 'N/A')
+            print(f"SUCCESS: Found old content to repost: '{title}' (ID: {content_id}).")
+
+            # আপনার বিদ্যমান ফাংশন ব্যবহার করে চ্যানেলে পোস্ট করুন
+            # পোস্টের টাইটেল একটু ভিন্নভাবে দেখানোর জন্য post_type পরিবর্তন করা যেতে পারে
+            post_to_public_channel(content_id) 
+
+            # ডাটাবেসে রিপোস্টের সময় আপডেট করুন
+            movies.update_one(
+                {'_id': content_id},
+                {'$set': {'last_reposted_at': datetime.now(timezone.utc)}}
+            )
+            print(f"SUCCESS: Updated 'last_reposted_at' for '{title}'.")
+
+        else:
+            print("INFO: No suitable old content found to repost at this time. Skipping.")
+
+    except Exception as e:
+        print(f"FATAL ERROR in repost_old_content_job: {e}")
+        
 # ======================================================================
 # --- HTML Templates ---
 # ======================================================================
@@ -1410,6 +1470,19 @@ def telegram_webhook():
 
     return jsonify(status='ok')
 
+# --- শিডিউলার চালু করার জন্য নতুন অংশ ---
 if __name__ == "__main__":
+    # --- Scheduler Setup ---
+    scheduler = BackgroundScheduler(daemon=True)
+    # প্রতি ২ দিন পর পর `repost_old_content_job` ফাংশনটি চালানোর জন্য শিডিউল করুন
+    # অ্যাপ চালু হওয়ার ২০ সেকেন্ড পর প্রথমবার এটি চলবে, এরপর থেকে প্রতি ২ দিন পর পর চলবে
+    scheduler.add_job(repost_old_content_job, 'interval', days=2, next_run_time=datetime.now() + timedelta(seconds=20))
+    scheduler.start()
+    print("SUCCESS: Scheduled job for reposting old content every 2 days.")
+
+    # অ্যাপ বন্ধ হয়ে গেলে শিডিউলারও বন্ধ করার ব্যবস্থা
+    atexit.register(lambda: scheduler.shutdown())
+
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+```
