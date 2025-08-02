@@ -7,64 +7,23 @@ from flask import Flask, render_template_string, request, redirect, url_for, Res
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
-from datetime import datetime, timezone, timedelta  # timedelta যোগ করা হয়েছে
-
-# --- নতুন ইম্পোর্ট ---
+from datetime import datetime, timezone, timedelta
 import atexit
 from apscheduler.schedulers.background import BackgroundScheduler
-# --------------------
 
 # ======================================================================
-# --- Environment Variables ---
+# --- Database and Initial Setup ---
 # ======================================================================
 MONGO_URI = os.environ.get("MONGO_URI")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-TMDB_API_KEY = os.environ.get("TMDB_API_KEY")
-ADMIN_CHANNEL_ID = os.environ.get("ADMIN_CHANNEL_ID")
-BOT_USERNAME = os.environ.get("BOT_USERNAME")
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
-ADMIN_USER_IDS_STR = os.environ.get("ADMIN_USER_IDS") 
-ADMIN_USER_IDS = [uid.strip() for uid in ADMIN_USER_IDS_STR.split(',')] if ADMIN_USER_IDS_STR else []
-MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK")
-UPDATE_CHANNEL_LINK = os.environ.get("UPDATE_CHANNEL_LINK")
-DEVELOPER_USER_LINK = os.environ.get("DEVELOPER_USER_LINK")
-PUBLIC_CHANNEL_ID = os.environ.get("PUBLIC_CHANNEL_ID")
-WEBSITE_URL = os.environ.get("WEBSITE_URL")
 
-required_vars = {
-    "MONGO_URI": MONGO_URI, "BOT_TOKEN": BOT_TOKEN, "TMDB_API_KEY": TMDB_API_KEY,
-    "ADMIN_CHANNEL_ID": ADMIN_CHANNEL_ID, "BOT_USERNAME": BOT_USERNAME,
-    "ADMIN_USERNAME": ADMIN_USERNAME, "ADMIN_PASSWORD": ADMIN_PASSWORD,
-    "ADMIN_USER_IDS": ADMIN_USER_IDS_STR,
-    "MAIN_CHANNEL_LINK": MAIN_CHANNEL_LINK,
-    "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK,
-    "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
-    "PUBLIC_CHANNEL_ID": PUBLIC_CHANNEL_ID,
-    "WEBSITE_URL": WEBSITE_URL,
-}
-missing_vars = [name for name, value in required_vars.items() if not value]
-if missing_vars:
-    print(f"FATAL: Missing required environment variables: {', '.join(missing_vars)}")
+# --- এই দুটি ভেরিয়েবল অবশ্যই এনভায়রনমেন্টে সেট করতে হবে ---
+if not MONGO_URI or not BOT_TOKEN:
+    print("FATAL: MONGO_URI and BOT_TOKEN environment variables are required.")
     sys.exit(1)
 
-# ======================================================================
-# --- Application Setup & Helper Functions ---
-# ======================================================================
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 app = Flask(__name__)
-
-def check_auth(username, password): return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
-def authenticate(): return Response('Could not verify your access level.', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
-
-def requires_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or not check_auth(auth.username, auth.password):
-            return authenticate()
-        return f(*args, **kwargs)
-    return decorated
 
 try:
     client = MongoClient(MONGO_URI)
@@ -75,20 +34,93 @@ except Exception as e:
     print(f"FATAL: Error connecting to MongoDB: {e}. Exiting.")
     sys.exit(1)
 
+# ======================================================================
+# --- Configuration Management ---
+# ======================================================================
+bot_config = {}
+user_states = {} # ব্যবহারকারীর বর্তমান অবস্থা ট্র্যাক করার জন্য
+
+# --- যে কী-গুলো ব্যবহারকারী বট থেকে পরিবর্তন করতে পারবেন ---
+ALLOWED_SETTINGS = {
+    "PUBLIC_CHANNEL_ID": "📢 Public Channel ID",
+    "ADMIN_CHANNEL_ID": "🔒 Admin Channel ID",
+    "BOT_USERNAME": "🤖 Bot Username",
+    "ADMIN_USERNAME": "🔑 Admin Login Username",
+    "ADMIN_PASSWORD": "🔑 Admin Login Password",
+    "ADMIN_USER_IDS": "👮 Admin User IDs",
+    "MAIN_CHANNEL_LINK": "🔗 Main Channel Link",
+    "UPDATE_CHANNEL_LINK": "🔗 Update Channel Link",
+    "DEVELOPER_USER_LINK": "🔗 Developer Link",
+    "WEBSITE_URL": "🌐 Website URL",
+    "TMDB_API_KEY": "🎬 TMDB API Key",
+}
+
+AD_SETTINGS = {
+    "popunder_code": "Ad: Pop-Under",
+    "social_bar_code": "Ad: Social Bar",
+    "banner_ad_code": "Ad: Banner",
+    "native_banner_code": "Ad: Native Banner",
+    "link_page_ad_1": "Ad: Link Page 1",
+    "link_page_ad_2": "Ad: Link Page 2",
+}
+
+def load_or_refresh_config():
+    """
+    ডাটাবেস থেকে সেটিংস্ লোড করে এবং গ্লোবাল bot_config ডিকশনারিতে রাখে।
+    যদি ডাটাবেসে কোনো সেটিং না পাওয়া যায়, তাহলে এনভায়রনমেন্ট ভেরিয়েবল থেকে নেওয়ার চেষ্টা করে।
+    """
+    global bot_config
+    db_settings = settings.find_one() or {}
+    
+    # এনভায়রনমেন্ট ভেরিয়েবল থেকে ডিফল্ট মান লোড করুন
+    env_settings = {
+        key: os.environ.get(key) for key in ALLOWED_SETTINGS.keys()
+    }
+
+    # প্রথমে ডাটাবেসের মান, তারপর এনভায়রনমেন্টের মান ব্যবহার করুন
+    temp_config = {**env_settings, **db_settings}
+    
+    # ADMIN_USER_IDS স্ট্রিংকে লিস্টে পরিণত করুন
+    if temp_config.get("ADMIN_USER_IDS") and isinstance(temp_config.get("ADMIN_USER_IDS"), str):
+        temp_config["ADMIN_USER_IDS"] = [uid.strip() for uid in temp_config["ADMIN_USER_IDS"].split(',')]
+    
+    bot_config = temp_config
+    print("SUCCESS: Configuration loaded/refreshed from database.")
+
+# অ্যাপ চালু হওয়ার সময় প্রথমবার কনফিগারেশন লোড করুন
+load_or_refresh_config()
+
+# ======================================================================
+# --- Authentication & Helper Functions ---
+# ======================================================================
+def check_auth(username, password):
+    return username == bot_config.get("ADMIN_USERNAME") and password == bot_config.get("ADMIN_PASSWORD")
+
+def authenticate():
+    return Response('Could not verify your access level.', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+    return decorated
+
 @app.context_processor
 def inject_global_vars():
-    ad_codes = settings.find_one() or {}
-    
     def format_links_for_edit(links_list):
         if not links_list or not isinstance(links_list, list): return ""
         return ", ".join([f"{link.get('lang', 'Link')}: {link.get('url', '')}" for link in links_list])
 
-    bot_username_clean = BOT_USERNAME.replace('https://t.me/', '').split('?')[0] if BOT_USERNAME else ''
-
+    bot_username_val = bot_config.get("BOT_USERNAME", "")
+    bot_username_clean = bot_username_val.replace('https://t.me/', '').split('?')[0] if bot_username_val else ''
+    
     return dict(
-        ad_settings=ad_codes, 
+        ad_settings=bot_config, 
         bot_username=bot_username_clean, 
-        main_channel_link=MAIN_CHANNEL_LINK, 
+        main_channel_link=bot_config.get("MAIN_CHANNEL_LINK"), 
         format_links_for_edit=format_links_for_edit
     )
 
@@ -111,13 +143,17 @@ def parse_links_from_string(link_string: str) -> list:
         else:
             links.append({'lang': 'Link', 'url': part})
     return links
-
+    
 # ======================================================================
 # --- Advanced Function for Posting to Public Channel ---
 # ======================================================================
 def post_to_public_channel(content_id, post_type='content', season_num=None):
+    PUBLIC_CHANNEL_ID = bot_config.get("PUBLIC_CHANNEL_ID")
+    WEBSITE_URL = bot_config.get("WEBSITE_URL")
+    BOT_USERNAME = bot_config.get("BOT_USERNAME")
+    
     if not PUBLIC_CHANNEL_ID or not WEBSITE_URL or not BOT_USERNAME:
-        print("WARNING: PUBLIC_CHANNEL_ID, WEBSITE_URL or BOT_USERNAME is not set. Skipping public post.")
+        print("WARNING: PUBLIC_CHANNEL_ID, WEBSITE_URL or BOT_USERNAME is not set in config. Skipping public post.")
         return
 
     try:
@@ -226,35 +262,16 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         print(f"FATAL ERROR in post_to_public_channel: {e}")
 
 # ======================================================================
-# --- Scheduled Job for Reposting Old Content (নতুন ফাংশন) ---
+# --- Scheduled Job for Reposting Old Content ---
 # ======================================================================
 def repost_old_content_job():
-    """
-    This job finds a random old movie/series that hasn't been reposted recently
-    and posts it to the public channel.
-    """
     print(f"[{datetime.now()}] --- Running scheduled job: Repost Old Content ---")
     try:
-        # আমরা এমন কন্টেন্ট খুঁজব যা গত ৯০ দিনে রিপোস্ট করা হয়নি
         ninety_days_ago = datetime.now(timezone.utc) - timedelta(days=90)
-
-        # এমন কন্টেন্ট খুঁজে বের করার জন্য কোয়েরি যা রিপোস্ট করার উপযুক্ত
         pipeline = [
-            {
-                '$match': {
-                    'is_coming_soon': {'$ne': True}, # 'Coming Soon' আইটেম বাদ দিন
-                    '$or': [
-                        {'last_reposted_at': {'$exists': False}}, # আগে কখনো রিপোস্ট হয়নি
-                        {'last_reposted_at': {'$lt': ninety_days_ago}} # অথবা ৯০ দিনের বেশি আগে রিপোস্ট হয়েছে
-                    ]
-                }
-            },
-            {
-                '$sample': {'size': 1} # র‍্যান্ডমভাবে একটি ডকুমেন্ট সিলেক্ট করুন
-            }
+            {'$match': {'is_coming_soon': {'$ne': True}, '$or': [{'last_reposted_at': {'$exists': False}}, {'last_reposted_at': {'$lt': ninety_days_ago}}]}},
+            {'$sample': {'size': 1}}
         ]
-
-        # অ্যাগ্রিগেশন চালান
         old_content_cursor = movies.aggregate(pipeline)
         old_content_to_post = next(old_content_cursor, None)
 
@@ -262,24 +279,14 @@ def repost_old_content_job():
             content_id = old_content_to_post['_id']
             title = old_content_to_post.get('title', 'N/A')
             print(f"SUCCESS: Found old content to repost: '{title}' (ID: {content_id}).")
-
-            # আপনার বিদ্যমান ফাংশন ব্যবহার করে চ্যানেলে পোস্ট করুন
-            # পোস্টের টাইটেল একটু ভিন্নভাবে দেখানোর জন্য post_type পরিবর্তন করা যেতে পারে
-            post_to_public_channel(content_id) 
-
-            # ডাটাবেসে রিপোস্টের সময় আপডেট করুন
-            movies.update_one(
-                {'_id': content_id},
-                {'$set': {'last_reposted_at': datetime.now(timezone.utc)}}
-            )
+            post_to_public_channel(content_id)
+            movies.update_one({'_id': content_id}, {'$set': {'last_reposted_at': datetime.now(timezone.utc)}})
             print(f"SUCCESS: Updated 'last_reposted_at' for '{title}'.")
-
         else:
             print("INFO: No suitable old content found to repost at this time. Skipping.")
-
     except Exception as e:
         print(f"FATAL ERROR in repost_old_content_job: {e}")
-        
+
 # ======================================================================
 # --- HTML Templates ---
 # ======================================================================
@@ -978,11 +985,12 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 """
 
 # ======================================================================
-# --- Helper Functions ---
+# --- Helper Functions (continued) ---
 # ======================================================================
 def get_tmdb_details_from_api(title_for_search, content_type, year=None):
+    TMDB_API_KEY = bot_config.get("TMDB_API_KEY")
     if not TMDB_API_KEY:
-        print("ERROR: TMDB_API_KEY is not set.")
+        print("ERROR: TMDB_API_KEY is not set in config.")
         return None
     
     search_type = "tv" if content_type in ["series", "series_pack"] else "movie"
@@ -1159,7 +1167,7 @@ def admin():
     search_query = request.args.get('search', '').strip()
     query_filter = {}
     if search_query: query_filter = {"title": {"$regex": search_query, "$options": "i"}}
-    ad_settings = settings.find_one() or {}
+    
     content_list = process_movie_list(list(movies.find(query_filter).sort('_id', -1)))
     feedback_list = process_movie_list(list(feedback.find().sort('timestamp', -1)))
     return render_template_string(admin_html, content_list=content_list, feedback_list=feedback_list, search_query=search_query)
@@ -1167,15 +1175,9 @@ def admin():
 @app.route('/admin/save_ads', methods=['POST'])
 @requires_auth
 def save_ads():
-    ad_codes = { 
-        "popunder_code": request.form.get("popunder_code", ""), 
-        "social_bar_code": request.form.get("social_bar_code", ""), 
-        "banner_ad_code": request.form.get("banner_ad_code", ""), 
-        "native_banner_code": request.form.get("native_banner_code", ""),
-        "link_page_ad_1": request.form.get("link_page_ad_1", ""),
-        "link_page_ad_2": request.form.get("link_page_ad_2", ""),
-    }
+    ad_codes = {key: request.form.get(key, "") for key in AD_SETTINGS.keys()}
     settings.update_one({}, {"$set": ad_codes}, upsert=True)
+    load_or_refresh_config()
     return redirect(url_for('admin'))
 
 @app.route('/edit_movie/<movie_id>', methods=["GET", "POST"])
@@ -1295,20 +1297,44 @@ def find_or_create_series(user_title, year, badge, chat_id):
     return movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "series"})
 
 # ======================================================================
-# --- Webhook Route ---
+# --- Webhook Route with Menu-based System ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
 
-    if 'channel_post' in data:
-        pass 
+    # --- Callback Query Handler (বাটনে ক্লিক করলে এটি কাজ করবে) ---
+    if 'callback_query' in data:
+        callback_query = data['callback_query']
+        user_id = callback_query['from']['id']
+        chat_id = callback_query['message']['chat']['id']
+        callback_data = callback_query['data']
+        message_id = callback_query['message']['message_id']
 
-    elif 'message' in data:
+        ADMIN_USER_IDS = bot_config.get("ADMIN_USER_IDS", [])
+        if str(user_id) not in ADMIN_USER_IDS:
+            requests.post(f"{TELEGRAM_API_URL}/answerCallbackQuery", json={'callback_query_id': callback_query['id'], 'text': 'You are not authorized.', 'show_alert': True})
+            return jsonify(status='ok')
+
+        if callback_data.startswith('set_'):
+            key_to_set = callback_data.split('set_')[1]
+            user_states[user_id] = {'action': 'awaiting_value', 'key': key_to_set}
+            friendly_name = ALLOWED_SETTINGS.get(key_to_set) or AD_SETTINGS.get(key_to_set, key_to_set)
+            
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✍️ Please send the new value for:\n\n`{friendly_name}`", 'parse_mode': 'Markdown'})
+            requests.post(f"{TELEGRAM_API_URL}/editMessageText", json={'chat_id': chat_id, 'message_id': message_id, 'text': f"Selected: `{friendly_name}`. Now waiting for your input...", 'parse_mode': 'Markdown'})
+        
+        return jsonify(status='ok')
+
+    # --- Message Handler (সাধারণ মেসেজ ও কমান্ডের জন্য) ---
+    if 'message' in data:
         message = data['message']
+        user_id = message['from']['id']
         chat_id = message['chat']['id']
         text = message.get('text', '').strip()
-        
+
+        ADMIN_USER_IDS = bot_config.get("ADMIN_USER_IDS", [])
+
         if text.startswith('/start'):
             payload_str = text.split(' ', 1)[-1]
             if payload_str != '/start':
@@ -1317,6 +1343,9 @@ def telegram_webhook():
                     movie_id_str = parts[0]
                     movie = movies.find_one({"_id": ObjectId(movie_id_str)})
                     if not movie: raise ValueError("Movie not found")
+                    
+                    ADMIN_CHANNEL_ID = bot_config.get("ADMIN_CHANNEL_ID")
+                    if not ADMIN_CHANNEL_ID: raise ValueError("Admin channel not configured")
 
                     if len(parts) == 2 and parts[1].startswith('S'):
                         season_num = int(parts[1][1:])
@@ -1324,7 +1353,7 @@ def telegram_webhook():
                         if pack and pack.get('message_id'):
                             requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': pack['message_id']})
                         else:
-                            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "Sorry, this season pack is not available via Telegram. Please check the website for direct links."})
+                            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "Sorry, this season pack is not available via Telegram."})
                     
                     elif len(parts) == 2:
                         quality = parts[1]
@@ -1337,21 +1366,65 @@ def telegram_webhook():
                         ep_info = next((e for e in movie.get('episodes', []) if e['season'] == season and e['episode_number'] == episode), None)
                         if ep_info and ep_info.get('message_id'):
                             requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': ep_info['message_id']})
-
                 except Exception as e:
                     print(f"Error processing start payload: {e}")
             else:
-                 bot_username_clean = BOT_USERNAME.replace('https://t.me/', '').split('?')[0] if BOT_USERNAME else "Bot"
+                 bot_username_clean = bot_config.get("BOT_USERNAME", "Bot").replace('https://t.me/', '').split('?')[0]
                  welcome_text = (f"👋 Welcome!\n\nI am @{bot_username_clean}, your assistant for finding movies and series.\n\n"
                                  f"🌐 Please visit our website to browse thousands of titles.")
                  requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_text, 'disable_web_page_preview': 'true'})
-            
             return jsonify(status='ok')
 
-        if str(chat_id) not in ADMIN_USER_IDS:
+        if str(user_id) not in ADMIN_USER_IDS:
             return jsonify(status='ok')
-        
-        if text.startswith('/add '):
+
+        if user_id in user_states and user_states[user_id]['action'] == 'awaiting_value':
+            state = user_states.pop(user_id)
+            key = state['key']
+            value = text
+            try:
+                settings.update_one({}, {"$set": {key: value}}, upsert=True)
+                load_or_refresh_config()
+                friendly_name = ALLOWED_SETTINGS.get(key) or AD_SETTINGS.get(key, key)
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Success! `{friendly_name}` has been updated.", 'parse_mode': 'Markdown'})
+            except Exception as e:
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"❌ Error updating setting: {e}"})
+            return jsonify(status='ok')
+
+        if text == '/settings':
+            main_keys = list(ALLOWED_SETTINGS.keys())
+            main_buttons = []
+            for i in range(0, len(main_keys), 2):
+                row = [{"text": ALLOWED_SETTINGS[main_keys[i]], "callback_data": f"set_{main_keys[i]}"}]
+                if i + 1 < len(main_keys):
+                    row.append({"text": ALLOWED_SETTINGS[main_keys[i+1]], "callback_data": f"set_{main_keys[i+1]}"})
+                main_buttons.append(row)
+            main_keyboard = {"inline_keyboard": main_buttons}
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "⚙️ *Main Bot Settings*\n\nSelect a setting to update:", 'reply_markup': json.dumps(main_keyboard), 'parse_mode': 'Markdown'})
+            
+            ad_keys = list(AD_SETTINGS.keys())
+            ad_buttons = []
+            for i in range(0, len(ad_keys), 2):
+                row = [{"text": AD_SETTINGS[ad_keys[i]], "callback_data": f"set_{ad_keys[i]}"}]
+                if i + 1 < len(ad_keys):
+                    row.append({"text": AD_SETTINGS[ad_keys[i+1]], "callback_data": f"set_{ad_keys[i+1]}"})
+                ad_buttons.append(row)
+            ad_keyboard = {"inline_keyboard": ad_buttons}
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "💰 *Advertisement Settings*\n\nSelect an ad setting to update:", 'reply_markup': json.dumps(ad_keyboard), 'parse_mode': 'Markdown'})
+
+        elif text == '/view_settings':
+            message_parts = ["*Current Bot & Ad Settings* ⚙️\n\n"]
+            combined_settings = {**ALLOWED_SETTINGS, **AD_SETTINGS}
+            for key, name in combined_settings.items():
+                value = bot_config.get(key, "Not Set")
+                if "PASSWORD" in key.upper() or "API_KEY" in key.upper():
+                    value = str(value)[:4] + '...' if value and value != "Not Set" else "Not Set"
+                elif len(str(value)) > 100:
+                    value = str(value)[:50] + '... (Too long)'
+                message_parts.append(f"*{name}* (`{key}`):\n`{value}`\n")
+            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': '\n'.join(message_parts), 'parse_mode': 'Markdown'})
+
+        elif text.startswith('/add '):
             try:
                 parts = text.split('/add ', 1)[1].split('|')
                 if len(parts) != 3: raise ValueError("Incorrect format")
@@ -1360,7 +1433,6 @@ def telegram_webhook():
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]\s*', '', title_part).strip()
-
                 year_match = re.search(r'\((\d{4})\)$', title_part_cleaned)
                 year, user_title = (year_match.group(1), title_part_cleaned.rsplit('(', 1)[0].strip()) if year_match else (None, title_part_cleaned)
 
@@ -1377,24 +1449,16 @@ def telegram_webhook():
                 
                 existing_movie = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "movie"})
                 if existing_movie:
-                    result = movies.update_one({"_id": existing_movie['_id']}, {"$set": movie_doc})
+                    movies.update_one({"_id": existing_movie['_id']}, {"$set": movie_doc})
                     content_id_to_post = existing_movie['_id']
                 else:
                     result = movies.insert_one(movie_doc)
                     content_id_to_post = result.inserted_id
-
                 post_to_public_channel(content_id_to_post, post_type='content')
-                
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added/updated `{user_title}` to the website.", 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /add command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/add` for help."})
-        
-        elif text == '/add':
-            reply_text = (f"👇 Use the format below to add a movie:\n\n"
-                          f"`/add Movie Name (Year) [Language] | Watch Links | Download Links`\n\n"
-                          f"*Separate multiple links with commas. E.g., `Hindi: url, Bangla: url`*")
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/add Movie (Year) [Lang] | Watch Links | Download Links`"})
 
         elif text.startswith('/addep '):
             try:
@@ -1405,7 +1469,6 @@ def telegram_webhook():
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]\s*', '', title_part).strip()
-
                 year_match = re.search(r'\((\d{4})\)$', title_part_cleaned)
                 year, user_title = (year_match.group(1), title_part_cleaned.rsplit('(', 1)[0].strip()) if year_match else (None, title_part_cleaned)
                 
@@ -1420,16 +1483,10 @@ def telegram_webhook():
                 new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
                 movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
                 movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
-                
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added S{season_num:02d}E{episode_num:02d} to `{series['title']}`.", 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /addep command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addep` for help."})
-
-        elif text == '/addep':
-            reply_text = (f"👇 Use this format to add an episode (it will create the series if it doesn't exist):\n\n"
-                          f"`/addep Series Name (Year) [Language] | S01E01 | Watch Links | Download Links`")
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addep Series (Year) [Lang] | S01E01 | Watch Links | Download Links`"})
 
         elif text.startswith('/addpack '):
             try:
@@ -1440,7 +1497,6 @@ def telegram_webhook():
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
                 title_part_cleaned = re.sub(r'\s*\[.*?\]\s*', '', title_part).strip()
-
                 year_match = re.search(r'\((\d{4})\)$', title_part_cleaned)
                 year, user_title = (year_match.group(1), title_part_cleaned.rsplit('(', 1)[0].strip()) if year_match else (None, title_part_cleaned)
 
@@ -1452,35 +1508,24 @@ def telegram_webhook():
                 if not series: return jsonify(status='ok')
 
                 new_pack = {"season": season_num, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
-                
                 movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
                 movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
-                
                 post_to_public_channel(series['_id'], post_type='season_pack', season_num=season_num)
-
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{series['title']}` and posted to channel.", 'parse_mode': 'Markdown'})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added Season {season_num} pack to `{series['title']}` and posted.", 'parse_mode': 'Markdown'})
             except Exception as e:
                 print(f"Error in /addpack command: {e}")
-                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addpack` for help."})
-
-        elif text == '/addpack':
-            reply_text = (f"👇 Use this format to add a season pack (it will create the series if it doesn't exist):\n\n"
-                          f"`/addpack Series Name (Year) [Language] | S01 | Watch Links | Download Links`")
-            requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': reply_text, 'parse_mode': 'Markdown'})
+                requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "❌ Wrong format! Use `/addpack Series (Year) [Lang] | S01 | Watch Links | Download Links`"})
 
     return jsonify(status='ok')
 
-# --- শিডিউলার চালু করার জন্য নতুন অংশ ---
+# ======================================================================
+# --- Application Start ---
+# ======================================================================
 if __name__ == "__main__":
-    # --- Scheduler Setup ---
     scheduler = BackgroundScheduler(daemon=True)
-    # প্রতি ২ দিন পর পর `repost_old_content_job` ফাংশনটি চালানোর জন্য শিডিউল করুন
-    # অ্যাপ চালু হওয়ার ২০ সেকেন্ড পর প্রথমবার এটি চলবে, এরপর থেকে প্রতি ২ দিন পর পর চলবে
     scheduler.add_job(repost_old_content_job, 'interval', days=2, next_run_time=datetime.now() + timedelta(seconds=20))
     scheduler.start()
     print("SUCCESS: Scheduled job for reposting old content every 2 days.")
-
-    # অ্যাপ বন্ধ হয়ে গেলে শিডিউলারও বন্ধ করার ব্যবস্থা
     atexit.register(lambda: scheduler.shutdown())
 
     port = int(os.environ.get("PORT", 5000))
