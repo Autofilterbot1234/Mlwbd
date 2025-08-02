@@ -4,6 +4,7 @@ import re
 import requests
 import json
 import time
+import threading
 from bs4 import BeautifulSoup
 from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
@@ -310,48 +311,94 @@ def add_scraped_movie_to_db(title, links):
     else:
         print(f"  -> ERROR: Failed to add '{title}' to the database.")
 
-def scrape_moviedokan():
-    """moviedokan.biz থেকে নতুন মুভি স্ক্র্যাপ করে ডাটাবেজে যুক্ত করে।"""
+def scrape_new_movies_regularly():
+    """নিয়মিত নতুন মুভি স্ক্র্যাপ করার জন্য শিডিউলার এই ফাংশনটি চালাবে।"""
     with app.app_context():
-        print("\nINFO: Starting scraper for moviedokan.biz...")
-        BASE_URL = "https://moviedokan.biz/"
-        
+        print("\nINFO: [REGULAR SCRAPE] Starting scraper for moviedokan.biz homepage...")
         try:
-            response = requests.get(BASE_URL, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
+            response = requests.get("https://moviedokan.biz/", headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'lxml')
-
+            
             movie_posts = soup.find_all('article', class_='post')
-            print(f"INFO: Found {len(movie_posts)} posts on the homepage.")
-
+            print(f"INFO: [REGULAR SCRAPE] Found {len(movie_posts)} posts on the homepage.")
+            
             for post in reversed(movie_posts):
                 try:
-                    title_tag = post.find('h2', class_='entry-title').find('a')
-                    if not title_tag: continue
-
+                    if not (title_tag := post.find('h2', class_='entry-title').find('a')):
+                        continue
+                        
                     movie_title = title_tag.get_text(strip=True)
                     detail_page_link = title_tag['href']
 
                     if movies.find_one({"title": {"$regex": f"^{re.escape(movie_title)}$", "$options": "i"}}):
                         continue
 
-                    print(f"SUCCESS: Found a new movie: '{movie_title}'")
-                    download_links = get_download_links_from_page(detail_page_link)
-
-                    if download_links:
+                    print(f"SUCCESS: [REGULAR SCRAPE] Found a new movie: '{movie_title}'")
+                    if (download_links := get_download_links_from_page(detail_page_link)):
                         add_scraped_movie_to_db(movie_title, download_links)
                     else:
-                        print(f"WARNING: No download links found for '{movie_title}'. Skipping.")
+                        print(f"WARNING: [REGULAR SCRAPE] No links found for '{movie_title}'.")
                     
                     time.sleep(5)
-
                 except Exception as e:
-                    print(f"ERROR: Could not process a post. Reason: {e}")
-                    continue
-
+                    print(f"ERROR: [REGULAR SCRAPE] Could not process a post. Reason: {e}")
         except Exception as e:
-            print(f"FATAL ERROR in scrape_moviedokan: {e}")
+            print(f"FATAL ERROR in regular scrape: {e}")
 
+def import_all_old_movies():
+    """পুরনো সব মুভি একবারে ইম্পোর্ট করার জন্য একটি বিশেষ ফাংশন।"""
+    with app.app_context():
+        print("\n" + "="*50 + "\nMASS IMPORT: Starting the process to import all old movies...\n" + "="*50 + "\n")
+        page, processed, added = 1, 0, 0
+        while True:
+            url = f"https://moviedokan.biz/page/{page}/" if page > 1 else "https://moviedokan.biz/"
+            print(f"\nINFO: [MASS IMPORT] Scraping page {page}: {url}")
+            try:
+                response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
+                if response.status_code == 404:
+                    print(f"INFO: [MASS IMPORT] Page {page} not found. Ending import.")
+                    break
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'lxml')
+                
+                movie_posts = soup.find_all('article', class_='post')
+                if not movie_posts:
+                    print(f"INFO: [MASS IMPORT] No more posts on page {page}. Ending import.")
+                    break
+                    
+                print(f" -> [MASS IMPORT] Found {len(movie_posts)} posts.")
+                for post in movie_posts:
+                    try:
+                        processed += 1
+                        if not (title_tag := post.find('h2', class_='entry-title').find('a')):
+                            continue
+                        
+                        movie_title = title_tag.get_text(strip=True)
+                        detail_page_link = title_tag['href']
+                        
+                        if movies.find_one({"title": {"$regex": f"^{re.escape(movie_title)}$", "$options": "i"}}):
+                            print(f"   - SKIPPING: '{movie_title}' already exists.")
+                            continue
+                            
+                        print(f"   + PROCESSING: New movie '{movie_title}'")
+                        if (download_links := get_download_links_from_page(detail_page_link)):
+                            add_scraped_movie_to_db(movie_title, download_links)
+                            added += 1
+                        else:
+                            print(f"   - WARNING: No links for '{movie_title}'.")
+                        
+                        time.sleep(3)
+                    except Exception as e:
+                        print(f"   - ERROR processing a post: {e}")
+                
+                page += 1
+                print(f" -> Moving to next page in 10 seconds...")
+                time.sleep(10)
+            except Exception as e:
+                print(f"FATAL ERROR fetching page {page}: {e}. Ending.")
+                break
+        print("\n" + "="*50 + "\nMASS IMPORT COMPLETE!\n" + f" - Pages scraped: {page-1}\n - Posts processed: {processed}\n - New movies added: {added}\n" + "="*50 + "\n")
 
 # ======================================================================
 # --- HTML টেমপ্লেট (চূড়ান্ত সংস্করণ) ---
@@ -1156,6 +1203,17 @@ def recently_added_all(): return render_full_list(list(movies.find({"is_coming_s
 # --- Admin and Other Routes ---
 # ======================================================================
 
+@app.route('/admin/run_mass_import')
+@requires_auth
+def run_mass_import_manually():
+    if 'mass_import_thread' in app.config and app.config['mass_import_thread'].is_alive():
+        return "A mass import process is already running. Please wait for it to complete."
+    print("MANUAL TRIGGER: Starting the mass import process in the background...")
+    thread = threading.Thread(target=import_all_old_movies)
+    thread.start()
+    app.config['mass_import_thread'] = thread
+    return "Mass import process has been started in the background. This may take a very long time. Please monitor your server logs for progress."
+
 @app.route('/go')
 def go_to_link():
     destination_url = request.args.get('url')
@@ -1531,11 +1589,10 @@ def telegram_webhook():
 # --- শিডিউলার সেটআপ এবং অ্যাপ চালু করা ---
 # ======================================================================
 scheduler = BackgroundScheduler(daemon=True, timezone=str(datetime.now(timezone.utc).astimezone().tzinfo))
-scheduler.add_job(scrape_moviedokan, 'interval', hours=2, id='moviedokan_scraper')
+scheduler.add_job(scrape_new_movies_regularly, 'interval', hours=2, id='regular_new_movie_scraper')
 scheduler.start()
 
-print("SUCCESS: Background scheduler for web scraping (moviedokan.biz) has been started.")
-print(" -> Scraper will run every 2 hours.")
+print("SUCCESS: Background scheduler for scraping new movies has been started (runs every 2 hours).")
 
 atexit.register(lambda: scheduler.shutdown())
 
