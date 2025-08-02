@@ -134,7 +134,7 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         escaped_title = escape_markdown(title)
         
         if post_type == 'season_pack' and season_num:
-            caption_parts = [f"📺 *{escaped_title}* \- *Season {season_num} Pack Added* 🔥"]
+            caption_parts = [f"📺 *{escaped_title}* \\- *Season {season_num} Pack Added* 🔥"]
         elif content_type_str == 'Series':
             caption_parts = [f"📺 *New Series Added:* {escaped_title}"]
         else:
@@ -181,7 +181,7 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
         caption_parts.append("\n" + " ".join(hashtags))
         
         bot_username_clean = BOT_USERNAME.replace('https://t.me/', '').split('?')[0]
-        caption_parts.append(f"\n*Join @{bot_username_clean} for more\!*")
+        caption_parts.append(f"\n*Join @{bot_username_clean} for more\\!*")
 
         caption = "\n\n".join(caption_parts)
 
@@ -237,8 +237,6 @@ index_html = """
   body { font-family: 'Roboto', sans-serif; background-color: var(--netflix-black); color: var(--text-light); overflow-x: hidden; }
   a { text-decoration: none; color: inherit; }
   ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #222; } ::-webkit-scrollbar-thumb { background: #555; } ::-webkit-scrollbar-thumb:hover { background: var(--netflix-red); }
-  
-  /* --- Desktop Design (Default) --- */
   .main-nav { position: fixed; top: 0; left: 0; width: 100%; padding: 15px 50px; display: flex; justify-content: space-between; align-items: center; z-index: 100; transition: background-color 0.3s ease; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 10%, rgba(0,0,0,0)); }
   .main-nav.scrolled { background-color: var(--netflix-black); }
   .logo { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--netflix-red); font-weight: 700; letter-spacing: 1px; }
@@ -284,8 +282,6 @@ index_html = """
   .telegram-join-section p { font-size: 1.1rem; color: var(--text-dark); max-width: 600px; margin: 0 auto 25px auto; }
   .telegram-join-button { display: inline-flex; align-items: center; gap: 10px; background-color: #2AABEE; color: white; padding: 12px 30px; border-radius: 50px; font-size: 1.1rem; font-weight: 700; transition: all 0.2s ease; }
   .telegram-join-button:hover { transform: scale(1.05); background-color: #1e96d1; } .telegram-join-button i { font-size: 1.3rem; }
-  
-  /* --- Mobile Design (<= 768px) --- */
   @media (max-width: 768px) {
       body { padding-bottom: var(--nav-height); }
       .main-nav { padding: 10px 15px; }
@@ -305,7 +301,6 @@ index_html = """
       .full-page-grid-title { font-size: 1.8rem; }
       .ad-container { margin: 25px 0; }
       .telegram-join-section { margin: 50px -15px -30px -15px; display: none; }
-      
       .category-grid, .full-page-grid {
           grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
           gap: 20px 12px;
@@ -321,7 +316,6 @@ index_html = """
           overflow: hidden;
           text-overflow: ellipsis;
       }
-      
       .bottom-nav { display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav-height); background-color: #181818; border-top: 1px solid #282828; justify-content: space-around; align-items: center; z-index: 200; }
       .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-dark); font-size: 10px; flex-grow: 1; padding: 5px 0; transition: color 0.2s ease; }
       .nav-item i { font-size: 20px; margin-bottom: 4px; } .nav-item.active { color: var(--text-light); } .nav-item.active i { color: var(--netflix-red); }
@@ -350,7 +344,6 @@ index_html = """
       </div>
     </a>
   {% endmacro %}
-
   {% if is_full_page_list %}
     <div class="full-page-grid-container">
         <h2 class="full-page-grid-title">{{ query }}</h2>
@@ -366,9 +359,7 @@ index_html = """
     </div>
   {% else %}
     {% if all_badges %}<div class="tags-section"><div class="tags-container">{% for badge in all_badges %}<a href="{{ url_for('movies_by_badge', badge_name=badge) }}" class="tag-link">{{ badge }}</a>{% endfor %}</div></div>{% endif %}
-    
     {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_links and movie.watch_links[0] and not movie.is_coming_soon %}<a href="{{ url_for('go_to_link', url=movie.watch_links[0].url) }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
-
     {% macro render_grid_section(title, movies_list, endpoint) %}
         {% if movies_list %}
         <div class="category-section">
@@ -384,7 +375,6 @@ index_html = """
         </div>
         {% endif %}
     {% endmacro %}
-
     {{ render_grid_section('Trending Now', trending_movies, 'trending_movies') }}
     {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
     {{ render_grid_section('Latest Movies', latest_movies, 'movies_only') }}
@@ -392,7 +382,6 @@ index_html = """
     {{ render_grid_section('Web Series', latest_series, 'webseries') }}
     {{ render_grid_section('Recently Added', recently_added_full, 'recently_added_all') }}
     {{ render_grid_section('Coming Soon', coming_soon_movies, 'coming_soon') }}
-    
     <div class="telegram-join-section">
         <i class="fa-brands fa-telegram telegram-icon"></i>
         <h2>Join Our Telegram Channel</h2>
@@ -455,12 +444,10 @@ detail_html = """
   .detail-meta span { font-weight: 700; color: var(--text-light); }
   .detail-meta span i { margin-right: 5px; color: var(--text-dark); }
   .detail-overview { font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px; }
-  
   .action-buttons-container { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
   .action-btn { background-color: var(--netflix-red); color: white; padding: 15px 30px; font-size: 1.1rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; transition: all 0.2s ease; justify-content: center; }
   .action-btn.download { background-color: #3b82f6; }
   .action-btn:hover { transform: scale(1.02); filter: brightness(1.1); }
-
   .section-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; padding-bottom: 5px; border-bottom: 2px solid var(--netflix-red); display: inline-block; }
   .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; background: #000; border-radius: 8px; }
   .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -526,7 +513,6 @@ detail_html = """
         {% if movie.genres %}<span>{{ movie.genres | join(' • ') }}</span>{% endif %}
       </div>
       <p class="detail-overview">{{ movie.overview }}</p>
-      
       {% if movie.type == 'movie' and (movie.watch_links or movie.download_links) %}
       <div class="action-buttons-container">
           {% for link in movie.watch_links %}
@@ -541,11 +527,9 @@ detail_html = """
           {% endfor %}
       </div>
       {% endif %}
-
       {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
       {% if trailer_key %}<div class="trailer-section"><h3 class="section-title">Watch Trailer</h3><div class="video-container"><iframe src="https://www.youtube.com/embed/{{ trailer_key }}" frameborder="0" allowfullscreen></iframe></div></div>{% endif %}
       <div style="margin: 20px 0;"><a href="{{ url_for('contact', report_id=movie._id, title=movie.title) }}" class="download-button" style="background-color:#5a5a5a; text-align:center;"><i class="fas fa-flag"></i> Report a Problem</a></div>
-      
       {% if movie.is_coming_soon %}<h3 class="section-title">Coming Soon</h3>
       {% elif movie.type == 'movie' %}
         {% if movie.files %}<div class="download-section"><h3 class="section-title">Get from Telegram</h3>{% for file in movie.files | sort(attribute='quality') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ file.quality }}" class="action-btn" style="background-color: #2AABEE; display: block; text-align:center; margin-top:10px; margin-bottom: 0;"><i class="fa-brands fa-telegram"></i> Get {{ file.quality }}</a>{% endfor %}</div>{% endif %}
@@ -709,50 +693,39 @@ go_link_html = """
     <div class="container">
         <h2>Please Wait...</h2>
         <p>Your link is being prepared.</p>
-        
         <div class="ad-placeholder" id="ad-slot-1">
              {% if ad_settings.link_page_ad_1 %}{{ ad_settings.link_page_ad_1|safe }}{% endif %}
         </div>
-        
         <p>Your download will start in:</p>
         <div class="timer" id="countdown">5</div>
-        
         <a id="link-btn" href="#" class="link-button" rel="noopener noreferrer">Generating Link...</a>
-
         <div class="ad-placeholder" id="ad-slot-2">
              {% if ad_settings.link_page_ad_2 %}{{ ad_settings.link_page_ad_2|safe }}{% endif %}
         </div>
     </div>
-
     <script>
         const countdownElement = document.getElementById('countdown');
         const linkButton = document.getElementById('link-btn');
         const destinationUrl = "{{ destination_url | safe }}";
         let seconds = 5;
-
         const interval = setInterval(() => {
             seconds--;
             countdownElement.textContent = seconds;
-
             if (seconds <= 0) {
                 clearInterval(interval);
                 countdownElement.style.display = 'none';
                 linkButton.textContent = 'Go to Link';
                 linkButton.classList.add('enabled');
                 linkButton.href = destinationUrl;
-                
-                // Automatically redirect
                 window.location.href = destinationUrl;
             }
         }, 1000);
-
         linkButton.addEventListener('click', (e) => {
             if (!linkButton.classList.contains('enabled')) {
                 e.preventDefault();
             }
         });
     </script>
-    
     {% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
 </body>
 </html>
@@ -824,13 +797,11 @@ hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray)
     <tr><td colspan="3" style="text-align: center;">No content found.</td></tr>
     {% endfor %}
   </tbody></table>
-  
   <div class="danger-zone">
       <h3>DANGER ZONE</h3>
       <p style="margin-bottom: 15px;">This will permanently delete all movies and series from the database. This action cannot be undone.</p>
       <a href="{{ url_for('delete_all_movies') }}" class="danger-zone-btn" onclick="return confirm('ARE YOU ABSOLUTELY SURE?\\nThis will delete ALL content from the database permanently.\\nThis action cannot be undone.');">Delete All Content</a>
   </div>
-
   <hr class="section-divider">
   <h2>User Feedback / Reports</h2>
   {% if feedback_list %}<table><thead><tr><th>Date</th><th>Type</th><th>Title</th><th>Message</th><th>Email</th><th>Action</th></tr></thead><tbody>{% for item in feedback_list %}<tr><td style="min-width: 150px;">{{ item.timestamp.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ item.type }}</td><td>{{ item.content_title }}</td><td style="white-space: pre-wrap; min-width: 300px;">{{ item.message }}</td><td>{{ item.email or 'N/A' }}</td><td><a href="{{ url_for('delete_feedback', feedback_id=item._id) }}" class="delete-btn" onclick="return confirm('Delete this feedback?');">Delete</a></td></tr>{% endfor %}</tbody></table>{% else %}<p>No new feedback or reports.</p>{% endif %}
@@ -868,7 +839,6 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
     <div class="form-group"><label>Languages (comma separated):</label><input type="text" name="languages" value="{{ movie.languages|join(', ') if movie.languages else '' }}" placeholder="e.g. Hindi, English, Bangla" /></div>
     <div class="form-group"><label>Poster Badge:</label><input type="text" name="poster_badge" value="{{ movie.poster_badge or '' }}" /></div>
     <div class="form-group"><label>Content Type:</label><select name="content_type" id="content_type" onchange="toggleFields()"><option value="movie" {% if movie.type == 'movie' %}selected{% endif %}>Movie</option><option value="series" {% if movie.type == 'series' %}selected{% endif %}>TV/Web Series</option></select></div>
-    
     <div id="movie_fields">
         <div class="form-group"><label>Watch Links (e.g., Hindi: url1, Bangla: url2):</label><textarea name="watch_links_str">{{ format_links_for_edit(movie.watch_links) }}</textarea></div>
         <div class="form-group"><label>Download Links (e.g., 480p: url1, 720p: url2):</label><textarea name="download_links_str">{{ format_links_for_edit(movie.download_links) }}</textarea></div>
@@ -883,7 +853,6 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
             {% endfor %}{% endif %}
         </div><button type="button" onclick="addTelegramFileField()" class="add-btn">Add Telegram File</button>
     </div>
-
     <div id="episode_fields" style="display: none;">
       <h3>Season Packs</h3>
       <div id="season_packs_container">
@@ -902,7 +871,6 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
       </div>
       <button type="button" onclick="addSeasonPackField()" class="add-btn">Add Season Pack</button>
       <hr style="margin: 20px 0;">
-
       <h3>Individual Episodes</h3>
       <div id="episodes_container">
       {% if movie.type == 'series' and movie.episodes %}{% for ep in movie.episodes | sort(attribute='episode_number') | sort(attribute='season') %}<div class="dynamic-item">
@@ -915,13 +883,11 @@ button[type="submit"], .add-btn { background: var(--netflix-red); color: white; 
         <button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove Episode</button>
       </div>{% endfor %}{% endif %}</div><button type="button" onclick="addEpisodeField()" class="add-btn">Add Episode</button>
     </div>
-    
     <hr style="margin: 20px 0;">
     <div class="form-group"><input type="checkbox" name="is_trending" value="true" {% if movie.is_trending %}checked{% endif %}><label style="display: inline-block;">Is Trending?</label></div>
     <div class="form-group"><input type="checkbox" name="is_coming_soon" value="true" {% if movie.is_coming_soon %}checked{% endif %}><label style="display: inline-block;">Is Coming Soon?</label></div>
     <button type="submit">Update Content</button>
   </form>
-  
   <script>
     function toggleFields() { var isSeries = document.getElementById('content_type').value === 'series'; document.getElementById('episode_fields').style.display = isSeries ? 'block' : 'none'; document.getElementById('movie_fields').style.display = isSeries ? 'none' : 'block'; }
     function addTelegramFileField() { const c = document.getElementById('telegram_files_container'); const d = document.createElement('div'); d.className = 'dynamic-item'; d.innerHTML = `<div class="form-group"><label>Quality (e.g., 720p):</label><input type="text" name="telegram_quality[]" required /></div><div class="form-group"><label>Message ID:</label><input type="number" name="telegram_message_id[]" required /></div><button type="button" onclick="this.parentElement.remove()" class="delete-btn">Remove</button>`; c.appendChild(d); }
@@ -988,7 +954,7 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
             cast = [actor['name'] for actor in res_json.get('credits', {}).get('cast', [])[:5]]
             runtime = res_json.get('runtime') if search_type == 'movie' else None
             if not runtime and search_type == 'tv' and res_json.get('episode_run_time'):
-                runtime = res_json['episode_run_time'][0]
+                runtime = res_json['episode_run_time'][0] if res_json['episode_run_time'] else None
             status = res_json.get('status')
 
             details = {
@@ -1091,13 +1057,11 @@ def recently_added_all(): return render_full_list(list(movies.find({"is_coming_s
 # ======================================================================
 # --- Admin and Other Routes ---
 # ======================================================================
-
 @app.route('/go')
 def go_to_link():
     destination_url = request.args.get('url')
     if not destination_url:
         return redirect(url_for('home'))
-        
     return render_template_string(go_link_html, destination_url=destination_url)
 
 @app.route('/admin', methods=["GET", "POST"])
@@ -1123,7 +1087,7 @@ def admin():
             doc_data['watch_links'] = parse_links_from_string(request.form.get('watch_links_str'))
             doc_data['download_links'] = parse_links_from_string(request.form.get('download_links_str'))
             doc_data['files'] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
-        else: # Series
+        else:
             doc_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
         
         result = movies.insert_one(doc_data)
@@ -1139,7 +1103,6 @@ def admin():
     content_list = process_movie_list(list(movies.find(query_filter).sort('_id', -1)))
     feedback_list = process_movie_list(list(feedback.find().sort('timestamp', -1)))
     return render_template_string(admin_html, content_list=content_list, feedback_list=feedback_list, search_query=search_query)
-
 
 @app.route('/admin/save_ads', methods=['POST'])
 @requires_auth
@@ -1178,7 +1141,7 @@ def edit_movie(movie_id):
             update_data["download_links"] = parse_links_from_string(request.form.get('download_links_str'))
             update_data["files"] = [{"quality": q, "message_id": int(mid)} for q, mid in zip(request.form.getlist('telegram_quality[]'), request.form.getlist('telegram_message_id[]')) if q and mid]
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"episodes": "", "season_packs": ""}})
-        else: # Series
+        else:
             update_data["episodes"] = [{"season": int(s), "episode_number": int(e), "title": t, "watch_links": parse_links_from_string(wl), "download_links": parse_links_from_string(dl), "message_id": int(m) if m and m.isdigit() else None} for s, e, t, wl, dl, m in zip(request.form.getlist('episode_season[]'), request.form.getlist('episode_number[]'), request.form.getlist('episode_title[]'), request.form.getlist('episode_watch_links_str[]'), request.form.getlist('episode_download_links_str[]'), request.form.getlist('episode_message_id[]'))]
             update_data["season_packs"] = [{
                 "season": int(s),
@@ -1194,9 +1157,7 @@ def edit_movie(movie_id):
             movies.update_one({"_id": obj_id}, {"$set": update_data, "$unset": {"watch_links": "", "download_links": "", "files": ""}})
         
         return redirect(url_for('admin'))
-
     return render_template_string(edit_html, movie=movie_obj)
-
 
 @app.route('/delete_movie/<movie_id>')
 @requires_auth
@@ -1297,7 +1258,7 @@ def telegram_webhook():
                     movie = movies.find_one({"_id": ObjectId(movie_id_str)})
                     if not movie: raise ValueError("Movie not found")
 
-                    if len(parts) == 2 and parts[1].startswith('S'): # Season pack
+                    if len(parts) == 2 and parts[1].startswith('S'):
                         season_num = int(parts[1][1:])
                         pack = next((p for p in movie.get('season_packs', []) if p['season'] == season_num), None)
                         if pack and pack.get('message_id'):
@@ -1305,13 +1266,13 @@ def telegram_webhook():
                         else:
                             requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': "Sorry, this season pack is not available via Telegram. Please check the website for direct links."})
                     
-                    elif len(parts) == 2: # Movie file
+                    elif len(parts) == 2:
                         quality = parts[1]
                         file_info = next((f for f in movie.get('files', []) if f['quality'] == quality), None)
                         if file_info:
                             requests.post(f"{TELEGRAM_API_URL}/copyMessage", json={'chat_id': chat_id, 'from_chat_id': ADMIN_CHANNEL_ID, 'message_id': file_info['message_id']})
                     
-                    elif len(parts) == 3: # Series episode
+                    elif len(parts) == 3:
                         season, episode = int(parts[1]), int(parts[2])
                         ep_info = next((e for e in movie.get('episodes', []) if e['season'] == season and e['episode_number'] == episode), None)
                         if ep_info and ep_info.get('message_id'):
@@ -1338,10 +1299,10 @@ def telegram_webhook():
                 
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
-                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+                title_part_cleaned = re.sub(r'\s*\[.*?\]\s*', '', title_part).strip()
 
-                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
-                year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+                year_match = re.search(r'\((\d{4})\)$', title_part_cleaned)
+                year, user_title = (year_match.group(1), title_part_cleaned.rsplit('(', 1)[0].strip()) if year_match else (None, title_part_cleaned)
 
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"⏳ Searching for `{user_title}`...", 'parse_mode': 'Markdown'})
                 tmdb_data = get_tmdb_details_from_api(user_title, "movie", year)
@@ -1351,13 +1312,17 @@ def telegram_webhook():
                     return jsonify(status='ok')
                 
                 final_languages = [badge.title()] if badge else tmdb_data.get('languages', [])
-
                 tmdb_data.pop('tmdb_title', None)
                 movie_doc = {**tmdb_data, "title": user_title, "type": "movie", "languages": final_languages, "poster_badge": badge, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "created_at": datetime.now(timezone.utc)}
                 
-                result = movies.update_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "movie"}, {"$set": movie_doc}, upsert=True)
-                
-                content_id_to_post = result.upserted_id or movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "movie"})['_id']
+                existing_movie = movies.find_one({"tmdb_id": tmdb_data["tmdb_id"], "type": "movie"})
+                if existing_movie:
+                    result = movies.update_one({"_id": existing_movie['_id']}, {"$set": movie_doc})
+                    content_id_to_post = existing_movie['_id']
+                else:
+                    result = movies.insert_one(movie_doc)
+                    content_id_to_post = result.inserted_id
+
                 post_to_public_channel(content_id_to_post, post_type='content')
                 
                 requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': f"✅ Successfully added/updated `{user_title}` to the website.", 'parse_mode': 'Markdown'})
@@ -1379,28 +1344,20 @@ def telegram_webhook():
                 
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
-                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+                title_part_cleaned = re.sub(r'\s*\[.*?\]\s*', '', title_part).strip()
 
-                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
-                year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+                year_match = re.search(r'\((\d{4})\)$', title_part_cleaned)
+                year, user_title = (year_match.group(1), title_part_cleaned.rsplit('(', 1)[0].strip()) if year_match else (None, title_part_cleaned)
                 
                 se_match = re.match(r'S(\d+)E(\d+)', se_part, re.IGNORECASE)
                 if not se_match: raise ValueError("Invalid S/E format. Use S01E01.")
                 season_num, episode_num = int(se_match.group(1)), int(se_match.group(2))
 
                 series = find_or_create_series(user_title, year, badge, chat_id)
-                if not series:
-                    return jsonify(status='ok') 
+                if not series: return jsonify(status='ok') 
 
                 series_id = series['_id']
-                new_episode = {
-                    "season": season_num, 
-                    "episode_number": episode_num, 
-                    "title": f"Episode {episode_num}", 
-                    "watch_links": parse_links_from_string(watch_links_str), 
-                    "download_links": parse_links_from_string(download_links_str), 
-                    "message_id": None
-                }
+                new_episode = {"season": season_num, "episode_number": episode_num, "title": f"Episode {episode_num}", "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
                 movies.update_one({"_id": series_id}, {"$pull": {"episodes": {"season": season_num, "episode_number": episode_num}}})
                 movies.update_one({"_id": series_id}, {"$push": {"episodes": new_episode}})
                 
@@ -1422,25 +1379,19 @@ def telegram_webhook():
 
                 lang_match = re.search(r'\[(.*?)\]', title_part)
                 badge = lang_match.group(1).strip() if lang_match else None
-                title_part_cleaned = re.sub(r'\s*\[.*?\]', '', title_part).strip()
+                title_part_cleaned = re.sub(r'\s*\[.*?\]\s*', '', title_part).strip()
 
-                year_match = re.search(r'\(?(\d{4})\)?$', title_part_cleaned)
-                year, user_title = (year_match.group(1), re.sub(r'\s*\(?\d{4}\)?$', '', title_part_cleaned).strip()) if year_match else (None, title_part_cleaned)
+                year_match = re.search(r'\((\d{4})\)$', title_part_cleaned)
+                year, user_title = (year_match.group(1), title_part_cleaned.rsplit('(', 1)[0].strip()) if year_match else (None, title_part_cleaned)
 
                 se_match = re.match(r'S(\d+)', season_part, re.IGNORECASE)
                 if not se_match: raise ValueError("Invalid season format. Use S01.")
                 season_num = int(se_match.group(1))
 
                 series = find_or_create_series(user_title, year, badge, chat_id)
-                if not series:
-                    return jsonify(status='ok')
+                if not series: return jsonify(status='ok')
 
-                new_pack = {
-                    "season": season_num, 
-                    "watch_links": parse_links_from_string(watch_links_str), 
-                    "download_links": parse_links_from_string(download_links_str), 
-                    "message_id": None
-                }
+                new_pack = {"season": season_num, "watch_links": parse_links_from_string(watch_links_str), "download_links": parse_links_from_string(download_links_str), "message_id": None}
                 
                 movies.update_one({"_id": series['_id']}, {"$pull": {"season_packs": {"season": season_num}}})
                 movies.update_one({"_id": series['_id']}, {"$push": {"season_packs": new_pack}})
