@@ -22,8 +22,7 @@ if not MONGO_URI or not BOT_TOKEN:
     sys.exit(1)
 
 # --- ★★★ মাস্টার পাসওয়ার্ড (এটি আপনার পছন্দের গোপন পাসওয়ার্ড দিয়ে পরিবর্তন করুন) ★★★ ---
-# নিজেকে প্রথম অ্যাডমিন বানানোর জন্য এই গোপন পাসওয়ার্ডটি ব্যবহার করুন।
-MASTER_PASSWORD = "change_this_secret_password"
+MASTER_PASSWORD = "AutoBotMasterKey@2024_Super"
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 app = Flask(__name__)
@@ -1132,7 +1131,6 @@ def find_or_create_series(user_title, year, badge, chat_id):
     
     upserted_id = result.upserted_id
     if not upserted_id:
-        # If the document was updated, we need to find its ID
         created_series = movies.find_one({"tmdb_id": tmdb_data.get("tmdb_id"), "type": "series"})
         if created_series:
             upserted_id = created_series['_id']
