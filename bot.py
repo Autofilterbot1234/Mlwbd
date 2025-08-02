@@ -3,16 +3,12 @@ import sys
 import re
 import requests
 import json
-import time
-import threading
-from bs4 import BeautifulSoup
 from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
-import atexit
 
 # ======================================================================
 # --- আপনার ব্যক্তিগত ও অ্যাডমিন তথ্য (এনভায়রনমেন্ট থেকে লোড হবে) ---
@@ -49,23 +45,11 @@ if missing_vars:
     sys.exit(1)
 
 # ======================================================================
-# --- অ্যাপ্লিকেশন সেটআপ এবং ডেটাবেস সংযোগ ---
+# --- অ্যাপ্লিকেশন সেটআপ এবং অন্যান্য ফাংশন ---
 # ======================================================================
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 app = Flask(__name__)
 
-try:
-    client = MongoClient(MONGO_URI)
-    db = client["movie_db"]
-    movies, settings, feedback = db["movies"], db["settings"], db["feedback"]
-    print("SUCCESS: Successfully connected to MongoDB!")
-except Exception as e:
-    print(f"FATAL: Error connecting to MongoDB: {e}. Exiting.")
-    sys.exit(1)
-
-# ======================================================================
-# --- অথেনটিকেশন এবং হেল্পার ফাংশন ---
-# ======================================================================
 def check_auth(username, password): return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
 def authenticate(): return Response('Could not verify your access level.', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
@@ -77,6 +61,15 @@ def requires_auth(f):
             return authenticate()
         return f(*args, **kwargs)
     return decorated
+
+try:
+    client = MongoClient(MONGO_URI)
+    db = client["movie_db"]
+    movies, settings, feedback = db["movies"], db["settings"], db["feedback"]
+    print("SUCCESS: Successfully connected to MongoDB!")
+except Exception as e:
+    print(f"FATAL: Error connecting to MongoDB: {e}. Exiting.")
+    sys.exit(1)
 
 @app.context_processor
 def inject_global_vars():
@@ -113,11 +106,8 @@ def parse_links_from_string(link_string: str) -> list:
             links.append({'lang': 'Link', 'url': part})
     return links
 
-def process_movie_list(movie_list):
-    return [{**item, '_id': str(item['_id'])} for item in movie_list]
-
 # ======================================================================
-# --- উন্নত ফাংশন: পাবলিক চ্যানেল ও TMDb ---
+# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য ---
 # ======================================================================
 def post_to_public_channel(content_id, post_type='content', season_num=None):
     if not PUBLIC_CHANNEL_ID or not WEBSITE_URL:
@@ -190,215 +180,6 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
 
     except Exception as e:
         print(f"FATAL ERROR in post_to_public_channel: {e}")
-
-def get_tmdb_details_from_api(title_for_search, content_type, year=None):
-    if not TMDB_API_KEY:
-        print("ERROR: TMDB_API_KEY is not set.")
-        return None
-    
-    search_type = "tv" if content_type in ["series", "series_pack"] else "movie"
-    
-    def search_tmdb(query_title, query_year):
-        print(f"INFO: Searching TMDb for: '{query_title}' (Type: {search_type}, Year: {query_year})")
-        try:
-            search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}&language=en-US"
-            if query_year and search_type == "movie":
-                search_url += f"&year={query_year}"
-            elif query_year and search_type == "tv":
-                search_url += f"&first_air_date_year={query_year}"
-
-            search_res = requests.get(search_url, timeout=10)
-            search_res.raise_for_status()
-            results = search_res.json().get("results")
-            
-            if not results: return None
-            
-            tmdb_id = results[0].get("id")
-            detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=videos"
-            detail_res = requests.get(detail_url, timeout=10)
-            detail_res.raise_for_status()
-            res_json = detail_res.json()
-            
-            trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
-            
-            language_names = [lang['english_name'] for lang in res_json.get('spoken_languages', [])]
-
-            details = {
-                "tmdb_id": tmdb_id, 
-                "tmdb_title": res_json.get("title") or res_json.get("name"),
-                "poster": f"https://image.tmdb.org/t/p/w500{res_json.get('poster_path')}" if res_json.get('poster_path') else None, 
-                "overview": res_json.get("overview"), 
-                "release_date": res_json.get("release_date") or res_json.get("first_air_date"), 
-                "genres": [g['name'] for g in res_json.get("genres", [])], 
-                "languages": language_names,
-                "vote_average": res_json.get("vote_average"), 
-                "trailer_key": trailer_key
-            }
-            print(f"SUCCESS: Found TMDb details for '{query_title}' (ID: {tmdb_id}).")
-            return details
-        except requests.RequestException as e:
-            print(f"ERROR: TMDb API request failed for '{query_title}'. Reason: {e}")
-            return None
-
-    tmdb_data = search_tmdb(title_for_search, year)
-    if not tmdb_data and year:
-        print(f"WARNING: TMDb search failed for '{title_for_search}' with year '{year}'. Retrying without year.")
-        tmdb_data = search_tmdb(title_for_search, None)
-        
-    if not tmdb_data:
-        print(f"FINAL WARNING: TMDb search found no results for '{title_for_search}' after all attempts.")
-    return tmdb_data
-
-# ======================================================================
-# --- *** ওয়েব স্ক্র্যাপিং সেকশন (MovieDokan) *** ---
-# ======================================================================
-
-def get_download_links_from_page(detail_page_url):
-    """একটি নির্দিষ্ট মুভির ডিটেইল পেজ থেকে ডাউনলোড লিংকগুলো স্ক্র্যাপ করে।"""
-    try:
-        print(f"  -> Visiting detail page: {detail_page_url}")
-        response = requests.get(detail_page_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, 'lxml')
-        content_area = soup.find('div', class_='entry-content')
-        if not content_area: return []
-
-        download_links = []
-        all_links = content_area.find_all('a', href=True)
-        
-        for link in all_links:
-            link_text = link.get_text(strip=True).lower()
-            link_url = link['href']
-            
-            keywords = ['download', 'drive', 'mega', 'watch', '480p', '720p', '1080p']
-            if any(keyword in link_text for keyword in keywords) and 'http' in link_url:
-                link_name = link.get_text(strip=True).replace("Download", "").strip() or "Download Link"
-                download_links.append({'lang': link_name, 'url': link_url})
-
-        unique_links = [dict(t) for t in {tuple(d.items()) for d in download_links}]
-        print(f"  -> Found {len(unique_links)} unique download links.")
-        return unique_links
-    except Exception as e:
-        print(f"  -> ERROR: Failed to get links from {detail_page_url}. Reason: {e}")
-        return []
-
-def add_scraped_movie_to_db(title, links):
-    """স্ক্র্যাপ করা মুভিকে ডাটাবেজে যুক্ত করে"""
-    print(f"  -> Adding '{title}' to the database...")
-    
-    tmdb_data = get_tmdb_details_from_api(title, "movie")
-    if not tmdb_data:
-        print(f"  -> WARNING: TMDb details not found for '{title}'. Adding with minimal info.")
-        tmdb_data = {}
-
-    movie_doc = {
-        "title": title,
-        "type": "movie",
-        "created_at": datetime.now(timezone.utc),
-        "watch_links": [],
-        "download_links": links,
-        "is_trending": True,
-        "is_coming_soon": False,
-        "poster_badge": "Scraped",
-        **tmdb_data
-    }
-    
-    result = movies.insert_one(movie_doc)
-    if result.inserted_id:
-        print(f"  -> SUCCESS: Added '{title}' to DB. Posting to public channel...")
-        post_to_public_channel(result.inserted_id)
-    else:
-        print(f"  -> ERROR: Failed to add '{title}' to the database.")
-
-def scrape_new_movies_regularly():
-    """নিয়মিত নতুন মুভি স্ক্র্যাপ করার জন্য শিডিউলার এই ফাংশনটি চালাবে।"""
-    with app.app_context():
-        print("\nINFO: [REGULAR SCRAPE] Starting scraper for moviedokan.biz homepage...")
-        try:
-            response = requests.get("https://moviedokan.biz/", headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'lxml')
-            
-            movie_posts = soup.find_all('article', class_='post')
-            print(f"INFO: [REGULAR SCRAPE] Found {len(movie_posts)} posts on the homepage.")
-            
-            for post in reversed(movie_posts):
-                try:
-                    if not (title_tag := post.find('h2', class_='entry-title').find('a')):
-                        continue
-                        
-                    movie_title = title_tag.get_text(strip=True)
-                    detail_page_link = title_tag['href']
-
-                    if movies.find_one({"title": {"$regex": f"^{re.escape(movie_title)}$", "$options": "i"}}):
-                        continue
-
-                    print(f"SUCCESS: [REGULAR SCRAPE] Found a new movie: '{movie_title}'")
-                    if (download_links := get_download_links_from_page(detail_page_link)):
-                        add_scraped_movie_to_db(movie_title, download_links)
-                    else:
-                        print(f"WARNING: [REGULAR SCRAPE] No links found for '{movie_title}'.")
-                    
-                    time.sleep(5)
-                except Exception as e:
-                    print(f"ERROR: [REGULAR SCRAPE] Could not process a post. Reason: {e}")
-        except Exception as e:
-            print(f"FATAL ERROR in regular scrape: {e}")
-
-def import_all_old_movies():
-    """পুরনো সব মুভি একবারে ইম্পোর্ট করার জন্য একটি বিশেষ ফাংশন।"""
-    with app.app_context():
-        print("\n" + "="*50 + "\nMASS IMPORT: Starting the process to import all old movies...\n" + "="*50 + "\n")
-        page, processed, added = 1, 0, 0
-        while True:
-            url = f"https://moviedokan.biz/page/{page}/" if page > 1 else "https://moviedokan.biz/"
-            print(f"\nINFO: [MASS IMPORT] Scraping page {page}: {url}")
-            try:
-                response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=20)
-                if response.status_code == 404:
-                    print(f"INFO: [MASS IMPORT] Page {page} not found. Ending import.")
-                    break
-                response.raise_for_status()
-                soup = BeautifulSoup(response.content, 'lxml')
-                
-                movie_posts = soup.find_all('article', class_='post')
-                if not movie_posts:
-                    print(f"INFO: [MASS IMPORT] No more posts on page {page}. Ending import.")
-                    break
-                    
-                print(f" -> [MASS IMPORT] Found {len(movie_posts)} posts.")
-                for post in movie_posts:
-                    try:
-                        processed += 1
-                        if not (title_tag := post.find('h2', class_='entry-title').find('a')):
-                            continue
-                        
-                        movie_title = title_tag.get_text(strip=True)
-                        detail_page_link = title_tag['href']
-                        
-                        if movies.find_one({"title": {"$regex": f"^{re.escape(movie_title)}$", "$options": "i"}}):
-                            print(f"   - SKIPPING: '{movie_title}' already exists.")
-                            continue
-                            
-                        print(f"   + PROCESSING: New movie '{movie_title}'")
-                        if (download_links := get_download_links_from_page(detail_page_link)):
-                            add_scraped_movie_to_db(movie_title, download_links)
-                            added += 1
-                        else:
-                            print(f"   - WARNING: No links for '{movie_title}'.")
-                        
-                        time.sleep(3)
-                    except Exception as e:
-                        print(f"   - ERROR processing a post: {e}")
-                
-                page += 1
-                print(f" -> Moving to next page in 10 seconds...")
-                time.sleep(10)
-            except Exception as e:
-                print(f"FATAL ERROR fetching page {page}: {e}. Ending.")
-                break
-        print("\n" + "="*50 + "\nMASS IMPORT COMPLETE!\n" + f" - Pages scraped: {page-1}\n - Posts processed: {processed}\n - New movies added: {added}\n" + "="*50 + "\n")
 
 # ======================================================================
 # --- HTML টেমপ্লেট (চূড়ান্ত সংস্করণ) ---
@@ -1135,6 +916,70 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 """
 
 # ======================================================================
+# --- Helper Functions ---
+# ======================================================================
+def get_tmdb_details_from_api(title_for_search, content_type, year=None):
+    if not TMDB_API_KEY:
+        print("ERROR: TMDB_API_KEY is not set.")
+        return None
+    
+    search_type = "tv" if content_type in ["series", "series_pack"] else "movie"
+    
+    def search_tmdb(query_title, query_year):
+        print(f"INFO: Searching TMDb for: '{query_title}' (Type: {search_type}, Year: {query_year})")
+        try:
+            search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}&language=en-US"
+            if query_year and search_type == "movie":
+                search_url += f"&year={query_year}"
+            elif query_year and search_type == "tv":
+                search_url += f"&first_air_date_year={query_year}"
+
+            search_res = requests.get(search_url, timeout=10)
+            search_res.raise_for_status()
+            results = search_res.json().get("results")
+            
+            if not results: return None
+            
+            tmdb_id = results[0].get("id")
+            detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=videos"
+            detail_res = requests.get(detail_url, timeout=10)
+            detail_res.raise_for_status()
+            res_json = detail_res.json()
+            
+            trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
+            
+            language_names = [lang['english_name'] for lang in res_json.get('spoken_languages', [])]
+
+            details = {
+                "tmdb_id": tmdb_id, 
+                "tmdb_title": res_json.get("title") or res_json.get("name"),
+                "poster": f"https://image.tmdb.org/t/p/w500{res_json.get('poster_path')}" if res_json.get('poster_path') else None, 
+                "overview": res_json.get("overview"), 
+                "release_date": res_json.get("release_date") or res_json.get("first_air_date"), 
+                "genres": [g['name'] for g in res_json.get("genres", [])], 
+                "languages": language_names,
+                "vote_average": res_json.get("vote_average"), 
+                "trailer_key": trailer_key
+            }
+            print(f"SUCCESS: Found TMDb details for '{query_title}' (ID: {tmdb_id}).")
+            return details
+        except requests.RequestException as e:
+            print(f"ERROR: TMDb API request failed for '{query_title}'. Reason: {e}")
+            return None
+
+    tmdb_data = search_tmdb(title_for_search, year)
+    if not tmdb_data and year:
+        print(f"WARNING: TMDb search failed for '{title_for_search}' with year '{year}'. Retrying without year.")
+        tmdb_data = search_tmdb(title_for_search, None)
+        
+    if not tmdb_data:
+        print(f"FINAL WARNING: TMDb search found no results for '{title_for_search}' after all attempts.")
+    return tmdb_data
+
+def process_movie_list(movie_list):
+    return [{**item, '_id': str(item['_id'])} for item in movie_list]
+
+# ======================================================================
 # --- Main Flask Routes ---
 # ======================================================================
 
@@ -1203,17 +1048,6 @@ def recently_added_all(): return render_full_list(list(movies.find({"is_coming_s
 # --- Admin and Other Routes ---
 # ======================================================================
 
-@app.route('/admin/run_mass_import')
-@requires_auth
-def run_mass_import_manually():
-    if 'mass_import_thread' in app.config and app.config['mass_import_thread'].is_alive():
-        return "A mass import process is already running. Please wait for it to complete."
-    print("MANUAL TRIGGER: Starting the mass import process in the background...")
-    thread = threading.Thread(target=import_all_old_movies)
-    thread.start()
-    app.config['mass_import_thread'] = thread
-    return "Mass import process has been started in the background. This may take a very long time. Please monitor your server logs for progress."
-
 @app.route('/go')
 def go_to_link():
     destination_url = request.args.get('url')
@@ -1257,6 +1091,7 @@ def admin():
     search_query = request.args.get('search', '').strip()
     query_filter = {}
     if search_query: query_filter = {"title": {"$regex": search_query, "$options": "i"}}
+    ad_settings = settings.find_one() or {}
     content_list = process_movie_list(list(movies.find(query_filter).sort('_id', -1)))
     feedback_list = process_movie_list(list(feedback.find().sort('timestamp', -1)))
     return render_template_string(admin_html, content_list=content_list, feedback_list=feedback_list, search_query=search_query)
@@ -1585,19 +1420,6 @@ def telegram_webhook():
 
     return jsonify(status='ok')
 
-# ======================================================================
-# --- শিডিউলার সেটআপ এবং অ্যাপ চালু করা ---
-# ======================================================================
-scheduler = BackgroundScheduler(daemon=True, timezone=str(datetime.now(timezone.utc).astimezone().tzinfo))
-scheduler.add_job(scrape_new_movies_regularly, 'interval', hours=2, id='regular_new_movie_scraper')
-scheduler.start()
-
-print("SUCCESS: Background scheduler for scraping new movies has been started (runs every 2 hours).")
-
-atexit.register(lambda: scheduler.shutdown())
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-
-```
