@@ -17,7 +17,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 MONGO_URI = os.environ.get("MONGO_URI")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-# --- এই দুটি ভেরিয়েবল অবশ্যই এনভায়রনমেন্টে সেট করতে হবে ---
 if not MONGO_URI or not BOT_TOKEN:
     print("FATAL: MONGO_URI and BOT_TOKEN environment variables are required.")
     sys.exit(1)
@@ -43,7 +42,7 @@ user_states = {} # ব্যবহারকারীর বর্তমান �
 # --- যে কী-গুলো ব্যবহারকারী বট থেকে পরিবর্তন করতে পারবেন ---
 ALLOWED_SETTINGS = {
     "PUBLIC_CHANNEL_ID": "📢 Public Channel ID",
-    "ADMIN_CHANNEL_ID": "🔒 Admin Channel ID",
+    "ADMIN_CHANNEL_ID": "🔒 Admin Files Channel ID",
     "BOT_USERNAME": "🤖 Bot Username",
     "ADMIN_USERNAME": "🔑 Admin Login Username",
     "ADMIN_PASSWORD": "🔑 Admin Login Password",
@@ -73,9 +72,7 @@ def load_or_refresh_config():
     db_settings = settings.find_one() or {}
     
     # এনভায়রনমেন্ট ভেরিয়েবল থেকে ডিফল্ট মান লোড করুন
-    env_settings = {
-        key: os.environ.get(key) for key in ALLOWED_SETTINGS.keys()
-    }
+    env_settings = {key: os.environ.get(key) for key in ALLOWED_SETTINGS.keys()}
 
     # প্রথমে ডাটাবেসের মান, তারপর এনভায়রনমেন্টের মান ব্যবহার করুন
     temp_config = {**env_settings, **db_settings}
@@ -114,7 +111,7 @@ def inject_global_vars():
         if not links_list or not isinstance(links_list, list): return ""
         return ", ".join([f"{link.get('lang', 'Link')}: {link.get('url', '')}" for link in links_list])
 
-    bot_username_val = bot_config.get("BOT_USERNAME", "")
+    bot_username_val = bot_config.get("BOT_USERNAME")
     bot_username_clean = bot_username_val.replace('https://t.me/', '').split('?')[0] if bot_username_val else ''
     
     return dict(
@@ -1369,7 +1366,8 @@ def telegram_webhook():
                 except Exception as e:
                     print(f"Error processing start payload: {e}")
             else:
-                 bot_username_clean = bot_config.get("BOT_USERNAME", "Bot").replace('https://t.me/', '').split('?')[0]
+                 bot_username_val = bot_config.get("BOT_USERNAME")
+                 bot_username_clean = bot_username_val.replace('https://t.me/', '').split('?')[0] if bot_username_val else "Bot"
                  welcome_text = (f"👋 Welcome!\n\nI am @{bot_username_clean}, your assistant for finding movies and series.\n\n"
                                  f"🌐 Please visit our website to browse thousands of titles.")
                  requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_text, 'disable_web_page_preview': 'true'})
@@ -1416,9 +1414,11 @@ def telegram_webhook():
             message_parts = ["*Current Bot & Ad Settings* ⚙️\n\n"]
             combined_settings = {**ALLOWED_SETTINGS, **AD_SETTINGS}
             for key, name in combined_settings.items():
-                value = bot_config.get(key, "Not Set")
+                value = bot_config.get(key)
+                if value is None: value = "Not Set"
+
                 if "PASSWORD" in key.upper() or "API_KEY" in key.upper():
-                    value = str(value)[:4] + '...' if value and value != "Not Set" else "Not Set"
+                    value = str(value)[:4] + '...' if value != "Not Set" else "Not Set"
                 elif len(str(value)) > 100:
                     value = str(value)[:50] + '... (Too long)'
                 message_parts.append(f"*{name}* (`{key}`):\n`{value}`\n")
