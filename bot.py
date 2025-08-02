@@ -1,3 +1,28 @@
+অবশ্যই! আমি আপনার অনুরোধ অনুযায়ী, প্রস্তাবিত সমস্ত পরিবর্তন অন্তর্ভুক্ত করে সম্পূর্ণ কোডটি আপডেট করেছি।
+
+নিচে সম্পূর্ণ এবং চূড়ান্ত কোডটি দেওয়া হলো। আপনি শুধু এই কোডটি কপি করে আপনার পুরানো কোডের জায়গায় পেস্ট করলেই হবে।
+
+### প্রধান পরিবর্তনসমূহ:
+
+1.  **`get_tmdb_details_from_api` ফাংশন:** এই ফাংশনটি এখন TMDb থেকে অতিরিক্ত তথ্য সংগ্রহ করবে, যেমন:
+    *   প্রধান অভিনেতা-অভিনেত্রীর তালিকা (`cast`)
+    *   মুভির রানটাইম (`runtime`)
+    *   সিরিজের স্ট্যাটাস (`status`)
+
+2.  **`post_to_public_channel` ফাংশন:** এই ফাংশনটি সম্পূর্ণরূপে উন্নত করা হয়েছে।
+    *   **তথ্যবহুল ক্যাপশন:** পোস্টে এখন কাস্ট, রানটাইম, জেনার, বছর, রেটিং এবং ভাষা আরও সুন্দরভাবে দেখানো হবে।
+    *   **স্মার্ট হেডিং:** নতুন মুভি, নতুন সিরিজ বা সিজন প্যাকের জন্য আলাদা আলাদা হেডিং স্বয়ংক্রিয়ভাবে তৈরি হবে।
+    *   **হ্যাশট্যাগ:** জেনার এবং বছর অনুযায়ী হ্যাশট্যাগ যুক্ত হবে, যা চ্যানেলে সার্চ করতে সাহায্য করবে।
+    *   **উন্নত বাটন:**
+        *   "Watch on Website" বাটনের পাশে "Watch Trailer" বাটন যুক্ত করা হয়েছে (যদি ট্রেইলার পাওয়া যায়)।
+        *   যদি কন্টেন্টটি টেলিগ্রাম বট থেকে সরাসরি পাওয়ার ব্যবস্থা থাকে, তাহলে "Get Files From Bot" নামে একটি নতুন বাটন যুক্ত হবে।
+    *   **চ্যানেলের প্রচার:** প্রতিটি পোস্টের নিচে আপনার বটের ইউজারনেম দিয়ে একটি প্রচারমূলক লাইন যুক্ত করা হয়েছে।
+
+---
+
+### সম্পূর্ণ ফাইনাল কোড:
+
+```python
 import os
 import sys
 import re
@@ -107,11 +132,11 @@ def parse_links_from_string(link_string: str) -> list:
     return links
 
 # ======================================================================
-# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য ---
+# --- উন্নত ফাংশন: পাবলিক চ্যানেলে পোস্ট করার জন্য (আপডেটেড সংস্করণ) ---
 # ======================================================================
 def post_to_public_channel(content_id, post_type='content', season_num=None):
-    if not PUBLIC_CHANNEL_ID or not WEBSITE_URL:
-        print("WARNING: PUBLIC_CHANNEL_ID or WEBSITE_URL is not set. Skipping public post.")
+    if not PUBLIC_CHANNEL_ID or not WEBSITE_URL or not BOT_USERNAME:
+        print("WARNING: PUBLIC_CHANNEL_ID, WEBSITE_URL or BOT_USERNAME is not set. Skipping public post.")
         return
 
     try:
@@ -120,52 +145,98 @@ def post_to_public_channel(content_id, post_type='content', season_num=None):
             print(f"ERROR: Could not find content with ID {content_id} to post.")
             return
 
+        # --- তথ্য সংগ্রহ ---
         title = content.get('title', 'No Title')
+        content_type_str = content.get('type', 'movie').title()
         poster_url = content.get('poster')
         genres = content.get('genres', [])
         rating = content.get('vote_average')
         release_date = content.get('release_date')
+        cast = content.get('cast', [])
+        runtime = content.get('runtime') # মুভির জন্য
+        trailer_key = content.get('trailer_key')
         
+        # --- ক্যাপশন তৈরি ---
         escaped_title = escape_markdown(title)
         
-        caption_parts = [f"🎬 *{escaped_title}*"]
+        # পোস্টের ধরন অনুযায়ী হেডিং
+        if post_type == 'season_pack' and season_num:
+            caption_parts = [f"📺 *{escaped_title}* \- *Season {season_num} Pack Added* 🔥"]
+        elif content_type_str == 'Series':
+            caption_parts = [f"📺 *New Series Added:* {escaped_title}"]
+        else:
+            caption_parts = [f"🎬 *New Movie Added:* {escaped_title}"]
 
         if release_date:
             year = release_date.split('-')[0]
-            caption_parts.append(f"🗓️ *Release Year:* {escape_markdown(year)}")
-            
+            caption_parts.append(f"🗓️ *Year:* {escape_markdown(year)}")
+
+        if runtime and content_type_str == 'Movie':
+             caption_parts.append(f"⏳ *Runtime:* {runtime} minutes")
+
         if genres:
             escaped_genres = escape_markdown(", ".join(genres))
             caption_parts.append(f"🎭 *Genre:* {escaped_genres}")
-
+        
+        # ভাষা নির্ধারণ (আরও স্মার্ট ভাবে)
+        available_langs = set(content.get('languages', []))
         if post_type == 'season_pack' and season_num:
-            caption_parts.insert(1, f"🔥 *Season {season_num} Pack Added*")
             pack = next((p for p in content.get('season_packs', []) if p['season'] == season_num), None)
-            pack_langs = set()
             if pack:
                 for link in pack.get('watch_links', []) + pack.get('download_links', []):
-                    lang = link.get('lang', 'N/A').strip()
-                    if lang and lang != 'N/A': pack_langs.add(lang)
-            languages_str = ", ".join(sorted(list(pack_langs))) or "Not Specified"
-            if languages_str != "Not Specified":
-                caption_parts.append(f"🗣️ *Language:* {escape_markdown(languages_str)}")
-        else:
-            languages = content.get('languages', [])
-            if languages:
-                 escaped_langs = escape_markdown(", ".join(languages))
-                 caption_parts.append(f"🗣️ *Language:* {escaped_langs}")
+                    lang = link.get('lang', '').strip()
+                    if lang: available_langs.add(lang.title())
+        elif content_type_str == 'Movie':
+             for link in content.get('watch_links', []) + content.get('download_links', []):
+                 lang = link.get('lang', '').strip()
+                 if lang: available_langs.add(lang.title())
+        
+        if available_langs:
+            caption_parts.append(f"🗣️ *Language:* {escape_markdown(', '.join(sorted(list(available_langs))))}")
+
+        if cast:
+            escaped_cast = escape_markdown(", ".join(cast))
+            caption_parts.append(f"👥 *Cast:* {escaped_cast}")
 
         if rating and float(rating) > 0:
             escaped_rating = escape_markdown(f"{rating:.1f}/10")
             caption_parts.append(f"⭐ *Rating:* {escaped_rating}")
 
+        # হ্যাশট্যাগ
+        hashtags = [f"#{g.replace(' ', '').replace('-', '')}" for g in genres]
+        if release_date: hashtags.append(f"#{content_type_str}{year}")
+        caption_parts.append("\n" + " ".join(hashtags))
+        
+        # চ্যানেলের নাম
+        bot_username_clean = BOT_USERNAME.replace('https://t.me/', '').split('?')[0]
+        caption_parts.append(f"\n*Join @{bot_username_clean} for more\!*")
+
         caption = "\n\n".join(caption_parts)
 
+        # --- ইনলাইন বাটন তৈরি ---
         with app.app_context():
             website_link = f"{WEBSITE_URL.rstrip('/')}{url_for('movie_detail', movie_id=str(content_id))}"
         
-        keyboard = { "inline_keyboard": [[{"text": "🌐 Watch on Website", "url": website_link}]] }
+        keyboard_buttons = []
+        
+        # প্রথম সারি
+        row1 = [{"text": "🌐 Watch on Website", "url": website_link}]
+        if trailer_key:
+            row1.append({"text": "🎬 Watch Trailer", "url": f"https://www.youtube.com/watch?v={trailer_key}"})
+        keyboard_buttons.append(row1)
 
+        # দ্বিতীয় সারি (শর্তসাপেক্ষে)
+        has_telegram_files = False
+        if content.get('files') or any(ep.get('message_id') for ep in content.get('episodes', [])) or any(p.get('message_id') for p in content.get('season_packs', [])):
+            has_telegram_files = True
+
+        if has_telegram_files:
+            bot_link = f"https://t.me/{bot_username_clean}?start={str(content_id)}"
+            keyboard_buttons.append([{"text": "🤖 Get Files From Bot", "url": bot_link}])
+
+        keyboard = {"inline_keyboard": keyboard_buttons}
+
+        # --- পোস্ট পাঠানো ---
         if poster_url:
             payload = {'chat_id': PUBLIC_CHANNEL_ID, 'photo': poster_url, 'caption': caption, 'parse_mode': 'MarkdownV2', 'reply_markup': json.dumps(keyboard)}
             response = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=payload)
@@ -919,6 +990,7 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 # --- Helper Functions ---
 # ======================================================================
 def get_tmdb_details_from_api(title_for_search, content_type, year=None):
+    # --- পরিবর্তন শুরু ---
     if not TMDB_API_KEY:
         print("ERROR: TMDB_API_KEY is not set.")
         return None
@@ -941,7 +1013,7 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
             if not results: return None
             
             tmdb_id = results[0].get("id")
-            detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=videos"
+            detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&language=en-US&append_to_response=videos,credits"
             detail_res = requests.get(detail_url, timeout=10)
             detail_res.raise_for_status()
             res_json = detail_res.json()
@@ -949,6 +1021,9 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
             trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
             
             language_names = [lang['english_name'] for lang in res_json.get('spoken_languages', [])]
+            cast = [actor['name'] for actor in res_json.get('credits', {}).get('cast', [])[:5]]
+            runtime = res_json.get('runtime')
+            status = res_json.get('status')
 
             details = {
                 "tmdb_id": tmdb_id, 
@@ -959,7 +1034,10 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
                 "genres": [g['name'] for g in res_json.get("genres", [])], 
                 "languages": language_names,
                 "vote_average": res_json.get("vote_average"), 
-                "trailer_key": trailer_key
+                "trailer_key": trailer_key,
+                "cast": cast,
+                "runtime": runtime,
+                "status": status
             }
             print(f"SUCCESS: Found TMDb details for '{query_title}' (ID: {tmdb_id}).")
             return details
@@ -975,6 +1053,7 @@ def get_tmdb_details_from_api(title_for_search, content_type, year=None):
     if not tmdb_data:
         print(f"FINAL WARNING: TMDb search found no results for '{title_for_search}' after all attempts.")
     return tmdb_data
+    # --- পরিবর্তন শেষ ---
 
 def process_movie_list(movie_list):
     return [{**item, '_id': str(item['_id'])} for item in movie_list]
@@ -1282,7 +1361,8 @@ def telegram_webhook():
                 except Exception as e:
                     print(f"Error processing start payload: {e}")
             else:
-                 welcome_text = (f"👋 Welcome!\n\nI am {BOT_USERNAME}, your assistant for finding movies and series.\n\n"
+                 bot_username_clean = BOT_USERNAME.replace('https://t.me/', '').split('?')[0]
+                 welcome_text = (f"👋 Welcome!\n\nI am @{bot_username_clean}, your assistant for finding movies and series.\n\n"
                                  f"🌐 Please visit our website to browse thousands of titles.")
                  requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_text, 'disable_web_page_preview': 'true'})
             
@@ -1423,3 +1503,4 @@ def telegram_webhook():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+```
