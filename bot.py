@@ -26,7 +26,7 @@ MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK")
 UPDATE_CHANNEL_LINK = os.environ.get("UPDATE_CHANNEL_LINK")
 DEVELOPER_USER_LINK = os.environ.get("DEVELOPER_USER_LINK")
 
-# *** নতুন সংযোজন: নোটিফিকেশন চ্যানেলের আইডি ***
+# নোটিফিকেশন চ্যানেলের আইডি
 NOTIFICATION_CHANNEL_ID = os.environ.get("NOTIFICATION_CHANNEL_ID")
 
 # --- প্রয়োজনীয় ভেরিয়েবলগুলো সেট করা হয়েছে কিনা তা পরীক্ষা করা ---
@@ -37,7 +37,7 @@ required_vars = {
     "MAIN_CHANNEL_LINK": MAIN_CHANNEL_LINK,
     "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK,
     "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
-    "NOTIFICATION_CHANNEL_ID": NOTIFICATION_CHANNEL_ID # *** নতুন সংযোজন ***
+    "NOTIFICATION_CHANNEL_ID": NOTIFICATION_CHANNEL_ID
 }
 
 missing_vars = [name for name, value in required_vars.items() if not value]
@@ -103,11 +103,11 @@ def escape_markdown(text: str) -> str:
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 # ======================================================================
-# --- *** নতুন সংযোজন: নোটিফিকেশন পাঠানোর ফাংশন *** ---
+# --- নোটিফিকেশন পাঠানোর ফাংশন ---
 # ======================================================================
 def send_notification_to_channel(movie_data):
     """
-    একটি নতুন কন্টেন্ট যোগ হলে নোটিফিকেশন চ্যানেলে পোস্ট পাঠায়।
+    একটি নতুন কন্টেন্ট যোগ হলে বা ম্যানুয়ালি ট্রিগার করা হলে নোটিফিকেশন চ্যানেলে পোস্ট পাঠায়।
     """
     if not NOTIFICATION_CHANNEL_ID:
         print("INFO: NOTIFICATION_CHANNEL_ID is not set. Skipping notification.")
@@ -159,7 +159,7 @@ def send_notification_to_channel(movie_data):
         print(f"FATAL ERROR in send_notification_to_channel: {e}")
 
 # ======================================================================
-# --- HTML টেমপ্লেট (অপরিবর্তিত) ---
+# --- HTML টেমপ্লেট ---
 # ======================================================================
 
 index_html = """
@@ -539,7 +539,7 @@ button[type="submit"]:hover, .add-btn:hover { background: #b00710; }
 table { display: block; overflow-x: auto; white-space: nowrap; width: 100%; border-collapse: collapse; margin-top: 20px; }
 th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid var(--light-gray); } th { background: #252525; } td { background: var(--dark-gray); }
 .action-buttons { display: flex; gap: 10px; } .action-buttons a, .action-buttons button, .delete-btn { padding: 6px 12px; border-radius: 4px; text-decoration: none; color: white; border: none; cursor: pointer; }
-.edit-btn { background: #007bff; } .delete-btn { background: #dc3545; }
+.edit-btn { background: #007bff; } .delete-btn { background: #dc3545; } .notify-btn { background: #17a2b8; }
 .dynamic-item { border: 1px solid var(--light-gray); padding: 15px; margin-bottom: 15px; border-radius: 5px; }
 hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray); margin: 40px 0; }
 .danger-zone { border: 2px solid var(--netflix-red); padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; }
@@ -576,7 +576,13 @@ hr.section-divider { border: 0; height: 2px; background-color: var(--light-gray)
   </form>
   <table><thead><tr><th>Title</th><th>Type</th><th>Actions</th></tr></thead><tbody>
     {% for movie in content_list %}
-    <tr><td>{{ movie.title }}</td><td>{{ movie.type | title }}</td><td class="action-buttons"><a href="{{ url_for('edit_movie', movie_id=movie._id) }}" class="edit-btn">Edit</a><button class="delete-btn" onclick="confirmDelete('{{ movie._id }}', '{{ movie.title }}')">Delete</button></td></tr>
+    <tr><td>{{ movie.title }}</td><td>{{ movie.type | title }}</td>
+        <td class="action-buttons">
+            <a href="{{ url_for('edit_movie', movie_id=movie._id) }}" class="edit-btn">Edit</a>
+            <a href="{{ url_for('send_manual_notification', movie_id=movie._id) }}" class="notify-btn" onclick="return confirm('Are you sure you want to send a notification for \\'{{ movie.title }}\\' to the channel?')">Notify</a>
+            <button class="delete-btn" onclick="confirmDelete('{{ movie._id }}', '{{ movie.title }}')">Delete</button>
+        </td>
+    </tr>
     {% else %}
     <tr><td colspan="3" style="text-align: center;">No content found.</td></tr>
     {% endfor %}
@@ -707,7 +713,7 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 """
 
 # ======================================================================
-# --- Helper Functions (অপরিবর্তিত) ---
+# --- Helper Functions ---
 # ======================================================================
 
 def parse_filename(filename):
@@ -852,7 +858,7 @@ def process_movie_list(movie_list):
     return [{**item, '_id': str(item['_id'])} for item in movie_list]
 
 # ======================================================================
-# --- Main Flask Routes (অপরিবর্তিত) ---
+# --- Main Flask Routes ---
 # ======================================================================
 
 @app.route('/')
@@ -921,14 +927,13 @@ def coming_soon(): return render_full_list(list(movies.find({"is_coming_soon": T
 def recently_added_all(): return render_full_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1)), "Recently Added")
 
 # ======================================================================
-# --- Admin and Webhook Routes (অপরিবর্তিত) ---
+# --- Admin and Webhook Routes ---
 # ======================================================================
 @app.route('/admin', methods=["GET", "POST"])
 @requires_auth
 def admin():
     if request.method == "POST":
         content_type = request.form.get("content_type", "movie")
-        # ম্যানুয়াল অ্যাডমিন এন্ট্রি সরল করা হয়েছে, কারণ মূল কাজ এখন ওয়েব-হুক দিয়ে হচ্ছে
         movie_data = {
             "title": request.form.get("title"),
             "type": content_type,
@@ -940,9 +945,7 @@ def admin():
         }
         if content_type == "movie":
             movie_data['watch_link'] = request.form.get("watch_link")
-            # অন্যান্য লিঙ্ক ও ফাইল যোগ করার লজিক এখানে যুক্ত করা যেতে পারে
-        else: # series
-             # এপিসোড যোগ করার লজিক এখানে যুক্ত করা যেতে পারে
+        else:
             pass
         
         movies.insert_one(movie_data)
@@ -990,8 +993,7 @@ def edit_movie(movie_id):
             "poster_badge": request.form.get("poster_badge", "").strip() or None
         }
         
-        # TMDb থেকে আনা তথ্য যেন ওভাররাইট না হয়, তাই এই অংশগুলো Edit প্যানেল থেকে আসা তথ্যের সাথে আপডেট হবে
-        if not movie_obj.get('tmdb_id'): # যদি এটি একটি প্লেসহোল্ডার এন্ট্রি হয়
+        if not movie_obj.get('tmdb_id'):
             tmdb_details = get_tmdb_details_from_api(update_data['title'], content_type)
             if tmdb_details:
                 update_data.update(tmdb_details)
@@ -1051,9 +1053,6 @@ def delete_feedback(feedback_id):
     return redirect(url_for('admin'))
 
 
-# ======================================================================
-# --- *** সম্পূর্ণ নতুন এবং উন্নত Webhook ফাংশন (নোটিফিকেশনসহ) *** ---
-# ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
@@ -1076,12 +1075,8 @@ def telegram_webhook():
         
         print(f"PARSED INFO: {parsed_info}")
 
-        # ধাপ ১: TMDb থেকে তথ্য আনার চেষ্টা করুন
         tmdb_data = get_tmdb_details_from_api(parsed_info['title'], parsed_info['type'], parsed_info.get('year'))
 
-        # ধাপ ২: TMDb থেকে তথ্য পাওয়া যাক বা না যাক, ডাটাবেসে কাজ করুন
-        
-        # --- কেস ১: TMDb থেকে সফলভাবে তথ্য পাওয়া গেছে ---
         if tmdb_data and tmdb_data.get("tmdb_id"):
             print(f"INFO: TMDb data found for '{tmdb_data['title']}'. Processing with full details.")
             tmdb_id = tmdb_data.get("tmdb_id")
@@ -1091,7 +1086,6 @@ def telegram_webhook():
             if parsed_info.get('languages'):
                 update_doc["$addToSet"] = {"languages": {"$each": parsed_info['languages']}}
 
-            # যদি কন্টেন্ট আগে থেকে না থাকে
             if not existing_content:
                 base_doc = {
                     **tmdb_data,
@@ -1101,13 +1095,9 @@ def telegram_webhook():
                 }
                 movies.insert_one(base_doc)
                 newly_created_doc = movies.find_one({"tmdb_id": tmdb_data.get("tmdb_id")})
-                
-                # *** নতুন সংযোজন: নোটিফিকেশন পাঠান ***
                 send_notification_to_channel(newly_created_doc) 
-                
-                existing_content = newly_created_doc # ভেরিয়েবল আপডেট করুন
+                existing_content = newly_created_doc
             
-            # নতুন ফাইল/এপিসোড/প্যাক যোগ করুন
             if parsed_info['type'] == 'movie':
                 quality = re.search(r'(\d{3,4}p)', filename, re.I).group(1) if re.search(r'(\d{3,4}p)', filename, re.I) else "HD"
                 new_file = {"quality": quality, "message_id": post['message_id']}
@@ -1125,17 +1115,14 @@ def telegram_webhook():
             movies.update_one({"_id": existing_content['_id']}, update_doc)
             print(f"SUCCESS: Full entry for '{tmdb_data['title']}' has been created/updated.")
 
-        # --- কেস ২: TMDb থেকে কোনো তথ্য পাওয়া যায়নি, কিন্তু একটি প্লেসহোল্ডার এন্ট্রি তৈরি করতে হবে ---
         else:
             print(f"WARNING: TMDb data not found for '{parsed_info['title']}'. Creating a placeholder entry.")
             
-            # শিরোনাম দিয়ে কোনো প্লেসহোল্ডার এন্ট্রি আগে থেকেই আছে কিনা দেখুন (যেখানে tmdb_id নেই)
             existing_placeholder = movies.find_one({
                 "title": {"$regex": f"^{re.escape(parsed_info['title'])}$", "$options": "i"}, 
                 "tmdb_id": None
             })
 
-            # যদি কোনো প্লেসহোল্ডার না থাকে, একটি নতুন তৈরি করুন
             if not existing_placeholder:
                 shell_doc = {
                     "title": parsed_info['title'],
@@ -1148,13 +1135,9 @@ def telegram_webhook():
                 }
                 movies.insert_one(shell_doc)
                 newly_created_doc = movies.find_one({"_id": shell_doc['_id']})
-                
-                # *** নতুন সংযোজন: নোটিফিকেশন পাঠান (কিন্তু প্লেসহোল্ডার পোস্টার থাকলে যাবে না) ***
                 send_notification_to_channel(newly_created_doc)
-                
-                existing_placeholder = newly_created_doc # ভেরিয়েবল আপডেট করুন
+                existing_placeholder = newly_created_doc
             
-            # এখন প্লেসহোল্ডার এন্ট্রিতে ফাইল/এপিসোড যোগ করুন
             update_op = {}
             if parsed_info['type'] == 'movie':
                 quality = re.search(r'(\d{3,4}p)', filename, re.I).group(1) if re.search(r'(\d{3,4}p)', filename, re.I) else "HD"
@@ -1174,8 +1157,6 @@ def telegram_webhook():
                 movies.update_one({"_id": existing_placeholder['_id']}, update_op)
             print(f"SUCCESS: Placeholder entry for '{parsed_info['title']}' has been created/updated.")
 
-
-    # --- /start কমান্ড হ্যান্ডলিং (অপরিবর্তিত) ---
     elif 'message' in data:
         message = data['message']
         chat_id = message['chat']['id']
@@ -1244,6 +1225,28 @@ def telegram_webhook():
                      requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message})
 
     return jsonify(status='ok')
+
+
+@app.route('/notify/<movie_id>')
+@requires_auth
+def send_manual_notification(movie_id):
+    """
+    অ্যাডমিন প্যানেল থেকে যেকোনো পুরোনো মুভির জন্য নোটিফিকেশন পাঠায়।
+    """
+    try:
+        obj_id = ObjectId(movie_id)
+        movie_obj = movies.find_one({"_id": obj_id})
+        
+        if movie_obj:
+            print(f"ADMIN_ACTION: Manually triggering notification for '{movie_obj.get('title')}'")
+            send_notification_to_channel(movie_obj)
+        else:
+            print(f"ADMIN_ACTION_FAIL: Could not find movie with ID {movie_id} to send notification.")
+            
+    except Exception as e:
+        print(f"ERROR in send_manual_notification for ID {movie_id}: {e}")
+        
+    return redirect(url_for('admin'))
 
 
 if __name__ == "__main__":
