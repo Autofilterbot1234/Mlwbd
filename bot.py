@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import requests
+import json
 from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -25,6 +26,9 @@ MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK")
 UPDATE_CHANNEL_LINK = os.environ.get("UPDATE_CHANNEL_LINK")
 DEVELOPER_USER_LINK = os.environ.get("DEVELOPER_USER_LINK")
 
+# *** নতুন সংযোজন: নোটিফিকেশন চ্যানেলের আইডি ***
+NOTIFICATION_CHANNEL_ID = os.environ.get("NOTIFICATION_CHANNEL_ID")
+
 # --- প্রয়োজনীয় ভেরিয়েবলগুলো সেট করা হয়েছে কিনা তা পরীক্ষা করা ---
 required_vars = {
     "MONGO_URI": MONGO_URI, "BOT_TOKEN": BOT_TOKEN, "TMDB_API_KEY": TMDB_API_KEY,
@@ -33,6 +37,7 @@ required_vars = {
     "MAIN_CHANNEL_LINK": MAIN_CHANNEL_LINK,
     "UPDATE_CHANNEL_LINK": UPDATE_CHANNEL_LINK,
     "DEVELOPER_USER_LINK": DEVELOPER_USER_LINK,
+    "NOTIFICATION_CHANNEL_ID": NOTIFICATION_CHANNEL_ID # *** নতুন সংযোজন ***
 }
 
 missing_vars = [name for name, value in required_vars.items() if not value]
@@ -45,7 +50,7 @@ if missing_vars:
 # --- অ্যাপ্লিকেশন সেটআপ এবং অন্যান্য ফাংশন ---
 # ======================================================================
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
-PLACEHOLDER_POSTER = "https://via.placeholder.com/400x600.png?text=Poster+Not+Found" # প্লেসহোল্ডার পোস্টার
+PLACEHOLDER_POSTER = "https://via.placeholder.com/400x600.png?text=Poster+Not+Found"
 app = Flask(__name__)
 
 def check_auth(username, password):
@@ -96,6 +101,62 @@ def escape_markdown(text: str) -> str:
         return ''
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+
+# ======================================================================
+# --- *** নতুন সংযোজন: নোটিফিকেশন পাঠানোর ফাংশন *** ---
+# ======================================================================
+def send_notification_to_channel(movie_data):
+    """
+    একটি নতুন কন্টেন্ট যোগ হলে নোটিফিকেশন চ্যানেলে পোস্ট পাঠায়।
+    """
+    if not NOTIFICATION_CHANNEL_ID:
+        print("INFO: NOTIFICATION_CHANNEL_ID is not set. Skipping notification.")
+        return
+
+    try:
+        # Flask application context এর মধ্যে URL তৈরি করতে হবে
+        with app.app_context():
+            movie_url = url_for('movie_detail', movie_id=str(movie_data['_id']), _external=True)
+
+        title = movie_data.get('title', 'N/A')
+        poster_url = movie_data.get('poster')
+
+        # পোস্টার না থাকলে বা প্লেসহোল্ডার হলে নোটিফিকেশন পাঠাবে না
+        if not poster_url or not poster_url.startswith('http') or poster_url == PLACEHOLDER_POSTER:
+            print(f"WARNING: Invalid or missing poster for '{title}'. Skipping photo notification.")
+            return
+
+        # পোস্টের ক্যাপশন তৈরি
+        caption = f"✨ **New Content Added!** ✨\n\n🎬 **{title}**\n\n👇 Click the button below to watch or download now!"
+
+        # ইনলাইন বাটন তৈরি
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "➡️ Watch Now on Website", "url": movie_url}]
+            ]
+        }
+
+        # Telegram API-এর জন্য পেলোড প্রস্তুত করা
+        api_url = f"{TELEGRAM_API_URL}/sendPhoto"
+        payload = {
+            'chat_id': NOTIFICATION_CHANNEL_ID,
+            'photo': poster_url,
+            'caption': caption,
+            'parse_mode': 'Markdown',
+            'reply_markup': json.dumps(keyboard)
+        }
+
+        # রিকোয়েস্ট পাঠানো
+        response = requests.post(api_url, data=payload, timeout=15)
+        response.raise_for_status()
+
+        if response.json().get('ok'):
+            print(f"SUCCESS: Notification sent to channel {NOTIFICATION_CHANNEL_ID} for '{title}'.")
+        else:
+            print(f"ERROR: Failed to send notification. Telegram API response: {response.text}")
+
+    except Exception as e:
+        print(f"FATAL ERROR in send_notification_to_channel: {e}")
 
 # ======================================================================
 # --- HTML টেমপ্লেট (অপরিবর্তিত) ---
@@ -991,7 +1052,7 @@ def delete_feedback(feedback_id):
 
 
 # ======================================================================
-# --- *** সম্পূর্ণ নতুন এবং উন্নত Webhook ফাংশন *** ---
+# --- *** সম্পূর্ণ নতুন এবং উন্নত Webhook ফাংশন (নোটিফিকেশনসহ) *** ---
 # ======================================================================
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
@@ -1039,7 +1100,12 @@ def telegram_webhook():
                     "is_trending": False, "is_coming_soon": False
                 }
                 movies.insert_one(base_doc)
-                existing_content = movies.find_one({"tmdb_id": tmdb_id}) # নতুন ডকুমেন্টটি আবার লোড করুন
+                newly_created_doc = movies.find_one({"tmdb_id": tmdb_data.get("tmdb_id")})
+                
+                # *** নতুন সংযোজন: নোটিফিকেশন পাঠান ***
+                send_notification_to_channel(newly_created_doc) 
+                
+                existing_content = newly_created_doc # ভেরিয়েবল আপডেট করুন
             
             # নতুন ফাইল/এপিসোড/প্যাক যোগ করুন
             if parsed_info['type'] == 'movie':
@@ -1081,7 +1147,12 @@ def telegram_webhook():
                     "is_trending": False, "is_coming_soon": False
                 }
                 movies.insert_one(shell_doc)
-                existing_placeholder = movies.find_one({"_id": shell_doc['_id']}) # নতুন ডকুমেন্টটি লোড করুন
+                newly_created_doc = movies.find_one({"_id": shell_doc['_id']})
+                
+                # *** নতুন সংযোজন: নোটিফিকেশন পাঠান (কিন্তু প্লেসহোল্ডার পোস্টার থাকলে যাবে না) ***
+                send_notification_to_channel(newly_created_doc)
+                
+                existing_placeholder = newly_created_doc # ভেরিয়েবল আপডেট করুন
             
             # এখন প্লেসহোল্ডার এন্ট্রিতে ফাইল/এপিসোড যোগ করুন
             update_op = {}
