@@ -193,338 +193,496 @@ def send_notification_to_channel(movie_data):
 # --- HTML টেমপ্লেট ---
 # ======================================================================
 
+# [নতুন ডিজাইন] index_html টেমপ্লেট
 index_html = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>MovieZone - Your Entertainment Hub</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
-  :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --text-dark: #a0a0a0; --nav-height: 60px; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Roboto', sans-serif; background-color: var(--netflix-black); color: var(--text-light); overflow-x: hidden; }
-  a { text-decoration: none; color: inherit; }
-  ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #222; } ::-webkit-scrollbar-thumb { background: #555; } ::-webkit-scrollbar-thumb:hover { background: var(--netflix-red); }
-  .main-nav { position: fixed; top: 0; left: 0; width: 100%; padding: 15px 50px; display: flex; justify-content: space-between; align-items: center; z-index: 100; transition: background-color 0.3s ease; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 10%, rgba(0,0,0,0)); }
-  .main-nav.scrolled { background-color: var(--netflix-black); }
-  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--netflix-red); font-weight: 700; letter-spacing: 1px; }
-  .search-input { background-color: rgba(0,0,0,0.7); border: 1px solid #777; color: var(--text-light); padding: 8px 15px; border-radius: 4px; transition: width 0.3s ease, background-color 0.3s ease; width: 250px; }
-  .search-input:focus { background-color: rgba(0,0,0,0.9); border-color: var(--text-light); outline: none; }
-  .tags-section { padding: 80px 50px 20px 50px; background-color: var(--netflix-black); }
-  .tags-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-  .tag-link { padding: 6px 16px; background-color: rgba(255, 255, 255, 0.1); border: 1px solid #444; border-radius: 50px; font-weight: 500; font-size: 0.85rem; transition: all 0.3s; }
-  .tag-link:hover { background-color: var(--netflix-red); border-color: var(--netflix-red); color: white; }
-  .hero-section { height: 85vh; position: relative; color: white; overflow: hidden; }
-  .hero-slide { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-size: cover; background-position: center top; display: flex; align-items: flex-end; padding: 50px; opacity: 0; transition: opacity 1.5s ease-in-out; z-index: 1; }
-  .hero-slide.active { opacity: 1; z-index: 2; }
-  .hero-slide::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--netflix-black) 10%, transparent 50%), linear-gradient(to right, rgba(0,0,0,0.8) 0%, transparent 60%); }
-  .hero-content { position: relative; z-index: 3; max-width: 50%; }
-  .hero-title { font-family: 'Bebas Neue', sans-serif; font-size: 5rem; font-weight: 700; margin-bottom: 1rem; line-height: 1; }
-  .hero-overview { font-size: 1.1rem; line-height: 1.5; margin-bottom: 1.5rem; max-width: 600px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .hero-buttons .btn { padding: 8px 20px; margin-right: 0.8rem; border: none; border-radius: 4px; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: opacity 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
-  .btn.btn-primary { background-color: var(--netflix-red); color: white; } .btn.btn-secondary { background-color: rgba(109, 109, 110, 0.7); color: white; } .btn:hover { opacity: 0.8; }
-  main { padding: 0 50px; }
-  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; }
-  .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
-  .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
-  .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
-  @keyframes rgb-glow {
-    0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; }
-    33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; }
-    66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; }
-  }
-  .poster-badge {
-    position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5;
-    font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2);
-    animation: rgb-glow 3s linear infinite;
-  }
-  .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
-  .rating-badge .fa-star { color: #f5c518; }
-  .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
-  .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
-  @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
-  .full-page-grid-container { padding-top: 100px; padding-bottom: 50px; }
-  .full-page-grid-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 30px; }
-  .category-grid, .full-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; }
-  .category-section { margin: 40px 0; }
-  .category-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-  .category-title { font-family: 'Roboto', sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; }
-  .see-all-link { color: var(--text-dark); font-weight: 700; font-size: 0.9rem; }
-  .bottom-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; height: var(--nav-height); background-color: #181818; border-top: 1px solid #282828; justify-content: space-around; align-items: center; z-index: 200; }
-  .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-dark); font-size: 10px; flex-grow: 1; padding: 5px 0; transition: color 0.2s ease; }
-  .nav-item i { font-size: 20px; margin-bottom: 4px; } .nav-item.active { color: var(--text-light); } .nav-item.active i { color: var(--netflix-red); }
-  .ad-container { margin: 40px 0; display: flex; justify-content: center; align-items: center; }
-  .telegram-join-section { background-color: #181818; padding: 40px 20px; text-align: center; margin: 50px -50px -50px -50px; }
-  .telegram-join-section .telegram-icon { font-size: 4rem; color: #2AABEE; margin-bottom: 15px; } .telegram-join-section h2 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: var(--text-light); margin-bottom: 10px; }
-  .telegram-join-section p { font-size: 1.1rem; color: var(--text-dark); max-width: 600px; margin: 0 auto 25px auto; }
-  .telegram-join-button { display: inline-flex; align-items: center; gap: 10px; background-color: #2AABEE; color: white; padding: 12px 30px; border-radius: 50px; font-size: 1.1rem; font-weight: 700; transition: all 0.2s ease; }
-  .telegram-join-button:hover { transform: scale(1.05); background-color: #1e96d1; } .telegram-join-button i { font-size: 1.3rem; }
-  @media (max-width: 768px) {
-      body { padding-bottom: var(--nav-height); } .main-nav { padding: 10px 15px; } main { padding: 0 15px; } .logo { font-size: 24px; } .search-input { width: 150px; }
-      .tags-section { padding: 80px 15px 15px 15px; } .tag-link { padding: 6px 15px; font-size: 0.8rem; } .hero-section { height: 60vh; margin: 0 -15px;}
-      .hero-slide { padding: 15px; align-items: center; } .hero-content { max-width: 90%; text-align: center; } .hero-title { font-size: 2.8rem; } .hero-overview { display: none; }
-      .category-section { margin: 25px 0; } .category-title { font-size: 1.2rem; }
-      .category-grid, .full-page-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; }
-      .full-page-grid-container { padding-top: 80px; } .full-page-grid-title { font-size: 1.8rem; }
-      .bottom-nav { display: flex; } .ad-container { margin: 25px 0; }
-      .telegram-join-section { margin: 50px -15px -30px -15px; }
-      .telegram-join-section h2 { font-size: 2rem; } .telegram-join-section p { font-size: 1rem; }
-  }
-</style>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EonMovies - Watch Movies & Series Online</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #e50914;
+            --background-color: #111;
+            --card-color: #1a1a1a;
+            --text-color: #fff;
+            --text-muted-color: #aaa;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+        a { text-decoration: none; color: inherit; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+
+        /* --- Header --- */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            z-index: 100;
+            transition: background-color 0.3s ease;
+        }
+        .header.scrolled { background-color: rgba(17, 17, 17, 0.9); backdrop-filter: blur(5px); }
+        .logo { font-size: 2rem; font-weight: 700; color: var(--primary-color); }
+        .search-bar { position: relative; }
+        .search-input {
+            background-color: rgba(0,0,0,0.5);
+            border: 1px solid #333;
+            color: var(--text-color);
+            padding: 8px 15px;
+            border-radius: 20px;
+            width: 250px;
+            transition: all 0.3s ease;
+        }
+        .search-input:focus { outline: none; border-color: var(--primary-color); }
+
+        /* --- Hero Section --- */
+        .hero-section {
+            height: 80vh;
+            position: relative;
+            display: flex;
+            align-items: center;
+            color: white;
+            background-size: cover;
+            background-position: center top;
+        }
+        .hero-section::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to top, var(--background-color) 10%, transparent 50%), 
+                        linear-gradient(to right, rgba(17,17,17,0.8) 0%, transparent 60%);
+        }
+        .hero-content { position: relative; z-index: 2; padding: 0 40px; max-width: 50%; }
+        .hero-title { font-size: 3.5rem; font-weight: 700; margin-bottom: 1rem; line-height: 1.2; }
+        .hero-overview { font-size: 1rem; color: var(--text-muted-color); line-height: 1.6; margin-bottom: 1.5rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .hero-button {
+            padding: 10px 25px;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 5px;
+            font-weight: 600;
+            transition: opacity 0.3s ease;
+        }
+        .hero-button:hover { opacity: 0.8; }
+
+        /* --- Main Content --- */
+        main { padding-top: 2rem; }
+        .content-section { margin-bottom: 40px; }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .section-title { font-size: 1.8rem; font-weight: 600; }
+        .see-all-link { color: var(--text-muted-color); font-weight: 500; }
+        
+        /* --- Movie Grid & Card --- */
+        .movie-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 20px 15px;
+        }
+        .movie-card {
+            background-color: var(--card-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .movie-card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+        .movie-poster { width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: cover; display: block; }
+        .movie-card-info { padding: 10px; }
+        .movie-card-title {
+            font-size: 0.95rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .movie-card-meta { font-size: 0.8rem; color: var(--text-muted-color); }
+        
+        .full-page-grid-container { padding: 120px 40px 50px; }
+        .full-page-grid-title { font-size: 2.5rem; font-weight: 700; margin-bottom: 30px; }
+
+        /* --- Footer --- */
+        .footer {
+            padding: 40px;
+            margin-top: 50px;
+            background-color: var(--card-color);
+            text-align: center;
+        }
+        .footer-logo { font-size: 1.5rem; font-weight: 700; color: var(--primary-color); margin-bottom: 10px; }
+        .footer-text { color: var(--text-muted-color); }
+        .footer a { color: var(--primary-color); }
+
+        @media (max-width: 768px) {
+            .header { padding: 15px 20px; }
+            .logo { font-size: 1.8rem; }
+            .search-input { width: 150px; }
+            .hero-section { height: 60vh; }
+            .hero-content { max-width: 90%; padding: 0 20px; }
+            .hero-title { font-size: 2.5rem; }
+            .hero-overview { font-size: 0.9rem; -webkit-line-clamp: 2; }
+            .section-title { font-size: 1.4rem; }
+            .movie-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px 10px; }
+            .full-page-grid-container { padding: 100px 20px 30px; }
+        }
+    </style>
 </head>
 <body>
-<header class="main-nav"><a href="{{ url_for('home') }}" class="logo">MovieZone</a><form method="GET" action="/" class="search-form"><input type="search" name="q" class="search-input" placeholder="Search..." value="{{ query|default('') }}" /></form></header>
-<main>
-  {% macro render_movie_card(m) %}
-    <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
-      <div class="poster-wrapper">
-        <div class="movie-poster-container">
-           <img class="movie-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
-           {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
-           {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
-        </div>
-        <div class="card-info-static">
-          <h4 class="card-info-title">{{ m.title }}</h4>
-          {% if m.release_date %}<p class="card-info-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}
-        </div>
-      </div>
-    </a>
-  {% endmacro %}
 
-  {% if is_full_page_list %}
-    <div class="full-page-grid-container">
-        <h2 class="full-page-grid-title">{{ query }}</h2>
-        {% if movies|length == 0 %}
-            <p style="text-align:center; color: var(--text-dark); margin-top: 40px;">No content found.</p>
-        {% else %}
-            <div class="full-page-grid">
-                {% for m in movies %}
-                    {{ render_movie_card(m) }}
-                {% endfor %}
-            </div>
-        {% endif %}
-    </div>
-  {% else %}
-    {% if all_badges %}<div class="tags-section"><div class="tags-container">{% for badge in all_badges %}<a href="{{ url_for('movies_by_badge', badge_name=badge) }}" class="tag-link">{{ badge }}</a>{% endfor %}</div></div>{% endif %}
-    
-    {% if recently_added %}<div class="hero-section">{% for movie in recently_added %}<div class="hero-slide {% if loop.first %}active{% endif %}" style="background-image: url('{{ movie.poster or '' }}');"><div class="hero-content"><h1 class="hero-title">{{ movie.title }}</h1><p class="hero-overview">{{ movie.overview }}</p><div class="hero-buttons">{% if movie.watch_link and not movie.is_coming_soon %}<a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="btn btn-primary"><i class="fas fa-play"></i> Watch Now</a>{% endif %}<a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="btn btn-secondary"><i class="fas fa-info-circle"></i> More Info</a></div></div></div>{% endfor %}</div>{% endif %}
+    <header class="header">
+        <a href="{{ url_for('home') }}" class="logo">EonMovies</a>
+        <form method="GET" action="/" class="search-bar">
+            <input type="search" name="q" class="search-input" placeholder="Search movies, series..." value="{{ query|default('') }}">
+        </form>
+    </header>
 
-    {% macro render_grid_section(title, movies_list, endpoint) %}
-        {% if movies_list %}
-        <div class="category-section">
-            <div class="category-header">
-                <h2 class="category-title">{{ title }}</h2>
-                <a href="{{ url_for(endpoint) }}" class="see-all-link">See All ></a>
+    {% macro render_movie_card(m) %}
+        <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
+            <img class="movie-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
+            <div class="movie-card-info">
+                <h4 class="movie-card-title">{{ m.title }}</h4>
+                {% if m.release_date %}<p class="movie-card-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}
             </div>
-            <div class="category-grid">
-                {% for m in movies_list %}
-                    {{ render_movie_card(m) }}
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
+        </a>
     {% endmacro %}
 
-    {{ render_grid_section('Trending Now', trending_movies, 'trending_movies') }}
-    {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
-    {{ render_grid_section('Latest Movies', latest_movies, 'movies_only') }}
-    {% if ad_settings.native_banner_code %}<div class="ad-container">{{ ad_settings.native_banner_code|safe }}</div>{% endif %}
-    {{ render_grid_section('Web Series', latest_series, 'webseries') }}
-    {{ render_grid_section('Recently Added', recently_added_full, 'recently_added_all') }}
-    {{ render_grid_section('Coming Soon', coming_soon_movies, 'coming_soon') }}
+    <main class="container">
+        {% if is_full_page_list %}
+            <div class="full-page-grid-container">
+                <h2 class="full-page-grid-title">{{ query }}</h2>
+                {% if movies|length == 0 %}
+                    <p style="text-align:center; color: var(--text-muted-color); margin-top: 40px;">No content found.</p>
+                {% else %}
+                    <div class="movie-grid">
+                        {% for m in movies %}
+                            {{ render_movie_card(m) }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+        {% else %}
+            <!-- Hero Section -->
+            {% if recently_added %}
+            <div class="hero-section" style="background-image: url('{{ (recently_added[0].poster or '').replace('w500', 'original') }}');">
+                <div class="hero-content">
+                    <h1 class="hero-title">{{ recently_added[0].title }}</h1>
+                    <p class="hero-overview">{{ recently_added[0].overview }}</p>
+                    <a href="{{ url_for('movie_detail', movie_id=recently_added[0]._id) }}" class="hero-button">
+                        <i class="fas fa-info-circle"></i> View Details
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Sections -->
+            {% if ad_settings.banner_ad_code %}<div style="margin: 40px 0; text-align: center;">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
+            
+            {% if trending_movies %}
+            <section class="content-section">
+                <div class="section-header"><h2 class="section-title">Trending Now</h2><a href="{{ url_for('trending_movies') }}" class="see-all-link">See All</a></div>
+                <div class="movie-grid">{% for m in trending_movies %}{{ render_movie_card(m) }}{% endfor %}</div>
+            </section>
+            {% endif %}
+
+            {% if latest_movies %}
+            <section class="content-section">
+                <div class="section-header"><h2 class="section-title">Latest Movies</h2><a href="{{ url_for('movies_only') }}" class="see-all-link">See All</a></div>
+                <div class="movie-grid">{% for m in latest_movies %}{{ render_movie_card(m) }}{% endfor %}</div>
+            </section>
+            {% endif %}
+            
+            {% if ad_settings.native_banner_code %}<div style="margin: 40px 0; text-align: center;">{{ ad_settings.native_banner_code|safe }}</div>{% endif %}
+
+            {% if latest_series %}
+            <section class="content-section">
+                <div class="section-header"><h2 class="section-title">Latest Series</h2><a href="{{ url_for('webseries') }}" class="see-all-link">See All</a></div>
+                <div class="movie-grid">{% for m in latest_series %}{{ render_movie_card(m) }}{% endfor %}</div>
+            </section>
+            {% endif %}
+            
+            {% if coming_soon_movies %}
+            <section class="content-section">
+                <div class="section-header"><h2 class="section-title">Coming Soon</h2><a href="{{ url_for('coming_soon') }}" class="see-all-link">See All</a></div>
+                <div class="movie-grid">{% for m in coming_soon_movies %}{{ render_movie_card(m) }}{% endfor %}</div>
+            </section>
+            {% endif %}
+        {% endif %}
+    </main>
     
-    <div class="telegram-join-section">
-        <i class="fa-brands fa-telegram telegram-icon"></i>
-        <h2>Join Our Telegram Channel</h2>
-        <p>Get the latest movie updates, news, and direct download links right on your phone!</p>
-        <a href="{{ main_channel_link or '#' }}" target="_blank" class="telegram-join-button"><i class="fa-brands fa-telegram"></i> Join Main Channel</a>
-    </div>
-  {% endif %}
-</main>
-<nav class="bottom-nav">
-    <a href="{{ url_for('home') }}" class="nav-item {% if request.endpoint == 'home' %}active{% endif %}">
-        <i class="fas fa-home"></i><span>Home</span>
-    </a>
-    <a href="{{ url_for('movies_only') }}" class="nav-item {% if request.endpoint == 'movies_only' %}active{% endif %}">
-        <i class="fas fa-film"></i><span>Movies</span>
-    </a>
-    <a href="{{ url_for('webseries') }}" class="nav-item {% if request.endpoint == 'webseries' %}active{% endif %}">
-        <i class="fas fa-tv"></i><span>Series</span>
-    </a>
-    <a href="{{ url_for('genres_page') }}" class="nav-item {% if request.endpoint == 'genres_page' %}active{% endif %}">
-        <i class="fas fa-layer-group"></i><span>Genres</span>
-    </a>
-    <a href="{{ url_for('contact') }}" class="nav-item {% if request.endpoint == 'contact' %}active{% endif %}">
-        <i class="fas fa-envelope"></i><span>Request</span>
-    </a>
-</nav>
-<script>
-    const nav = document.querySelector('.main-nav');
-    window.addEventListener('scroll', () => { window.scrollY > 50 ? nav.classList.add('scrolled') : nav.classList.remove('scrolled'); });
-    document.addEventListener('DOMContentLoaded', function() { const slides = document.querySelectorAll('.hero-slide'); if (slides.length > 1) { let currentSlide = 0; const showSlide = (index) => slides.forEach((s, i) => s.classList.toggle('active', i === index)); setInterval(() => { currentSlide = (currentSlide + 1) % slides.length; showSlide(currentSlide); }, 5000); } });
-</script>
-{% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
-{% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
+    <footer class="footer">
+        <a href="{{ url_for('home') }}" class="footer-logo">EonMovies</a>
+        <p class="footer-text">Watch the latest movies and web series for free. All rights reserved.</p>
+        <p class="footer-text">Join our <a href="{{ main_channel_link or '#' }}" target="_blank">Telegram Channel</a> for updates!</p>
+    </footer>
+
+    <script>
+        const header = document.querySelector('.header');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 50) {
+                header.classList.add('scrolled');
+            } else {
+                header.classList.remove('scrolled');
+            }
+        });
+    </script>
+    {% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
 </body>
 </html>
 """
+
+# [নতুন ডিজাইন] detail_html টেমপ্লেট
 detail_html = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>{{ movie.title if movie else "Content Not Found" }} - MovieZone</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:wght@400;500;700&display=swap');
-  :root { --netflix-red: #E50914; --netflix-black: #141414; --text-light: #f5f5f5; --text-dark: #a0a0a0; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Roboto', sans-serif; background: var(--netflix-black); color: var(--text-light); }
-  .detail-header { position: absolute; top: 0; left: 0; right: 0; padding: 20px 50px; z-index: 100; }
-  .back-button { color: var(--text-light); font-size: 1.2rem; font-weight: 700; text-decoration: none; display: flex; align-items: center; gap: 10px; transition: color 0.3s ease; }
-  .back-button:hover { color: var(--netflix-red); }
-  .detail-hero { position: relative; width: 100%; display: flex; align-items: center; justify-content: center; padding: 100px 0; }
-  .detail-hero-background { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-size: cover; background-position: center; filter: blur(20px) brightness(0.4); transform: scale(1.1); }
-  .detail-hero::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, rgba(20,20,20,1) 0%, rgba(20,20,20,0.6) 50%, rgba(20,20,20,1) 100%); }
-  .detail-content-wrapper { position: relative; z-index: 2; display: flex; gap: 40px; max-width: 1200px; padding: 0 50px; width: 100%; }
-  .detail-poster { width: 300px; height: 450px; flex-shrink: 0; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); object-fit: cover; }
-  .detail-info { flex-grow: 1; max-width: 65%; }
-  .detail-title { font-family: 'Bebas Neue', sans-serif; font-size: 4.5rem; font-weight: 700; line-height: 1.1; margin-bottom: 20px; }
-  .detail-meta { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 25px; font-size: 1rem; color: var(--text-dark); }
-  .detail-meta span { font-weight: 700; color: var(--text-light); }
-  .detail-meta span i { margin-right: 5px; color: var(--text-dark); }
-  .detail-overview { font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px; }
-  .action-btn { background-color: var(--netflix-red); color: white; padding: 15px 30px; font-size: 1.2rem; font-weight: 700; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; text-decoration: none; margin-bottom: 15px; transition: all 0.2s ease; }
-  .action-btn:hover { transform: scale(1.05); background-color: #f61f29; }
-  .section-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 20px; padding-bottom: 5px; border-bottom: 2px solid var(--netflix-red); display: inline-block; }
-  .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; background: #000; border-radius: 8px; }
-  .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-  .download-section, .episode-section { margin-top: 30px; }
-  .download-button, .episode-button { display: inline-block; padding: 12px 25px; background-color: #444; color: white; text-decoration: none; border-radius: 4px; font-weight: 700; transition: background-color 0.3s ease; margin-right: 10px; margin-bottom: 10px; text-align: center; vertical-align: middle; }
-  .copy-button { background-color: #555; color: white; border: none; padding: 8px 15px; font-size: 0.9rem; cursor: pointer; border-radius: 4px; margin-left: -5px; margin-bottom: 10px; vertical-align: middle; }
-  .episode-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 15px; border-radius: 5px; background-color: #1a1a1a; border-left: 4px solid var(--netflix-red); }
-  .episode-title { font-size: 1.1rem; font-weight: 500; color: #fff; }
-  .ad-container { margin: 30px 0; text-align: center; }
-  .related-section-container { padding: 40px 0; background-color: #181818; }
-  .related-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px 15px; padding: 0 50px; }
-  .movie-card { display: block; cursor: pointer; transition: transform 0.3s ease; }
-  .poster-wrapper { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background-color: #222; display: flex; flex-direction: column; }
-  .movie-poster-container { position: relative; overflow: hidden; width:100%; flex-grow:1; aspect-ratio: 2 / 3; }
-  .movie-poster { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
-  @keyframes rgb-glow {
-    0%, 100% { color: #ff5555; text-shadow: 0 0 5px #ff5555, 0 0 10px #ff5555; }
-    33% { color: #55ff55; text-shadow: 0 0 5px #55ff55, 0 0 10px #55ff55; }
-    66% { color: #55aaff; text-shadow: 0 0 5px #55aaff, 0 0 10px #55aaff; }
-  }
-  .poster-badge {
-    position: absolute; top: 18px; left: -35px; width: 140px; background: rgba(20, 20, 20, 0.8);
-    backdrop-filter: blur(5px); transform: rotate(-45deg); text-align: center; z-index: 5;
-    font-size: 0.75rem; font-weight: 700; padding: 4px 0; border: 1px solid rgba(255, 255, 255, 0.2);
-    animation: rgb-glow 3s linear infinite;
-  }
-  .rating-badge { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px 10px; font-size: 0.8rem; font-weight: 700; border-radius: 20px; z-index: 3; display: flex; align-items: center; gap: 5px; backdrop-filter: blur(5px); }
-  .rating-badge .fa-star { color: #f5c518; }
-  .card-info-static { padding: 10px 8px; background-color: #1a1a1a; text-align: left; width: 100%; flex-shrink: 0; }
-  .card-info-title { font-size: 0.9rem; font-weight: 500; color: var(--text-light); margin: 0 0 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-info-meta { font-size: 0.75rem; color: var(--text-dark); margin: 0; }
-  @media (hover: hover) { .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); } .movie-card:hover .movie-poster { transform: scale(1.1); } }
-  @media (max-width: 992px) { .detail-content-wrapper { flex-direction: column; align-items: center; text-align: center; } .detail-info { max-width: 100%; } .detail-title { font-size: 3.5rem; } }
-  @media (max-width: 768px) { .detail-header { padding: 20px; } .detail-hero { padding: 80px 20px 40px; } .detail-poster { width: 60%; max-width: 220px; height: auto; } .detail-title { font-size: 2.2rem; }
-  .action-btn, .download-button { display: block; width: 100%; max-width: 320px; margin: 0 auto 10px auto; }
-  .episode-item { flex-direction: column; align-items: flex-start; gap: 10px; } .episode-button { width: 100%; }
-  .section-title { margin-left: 15px !important; } .related-section-container { padding: 20px 0; }
-  .related-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 15px 10px; padding: 0 15px; } }
-</style>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ movie.title if movie else "Content Not Found" }} - EonMovies</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #e50914;
+            --background-color: #111;
+            --card-color: #1a1a1a;
+            --text-color: #fff;
+            --text-muted-color: #aaa;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+        a { text-decoration: none; color: inherit; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+
+        /* --- Header --- */
+        .header { position: absolute; top: 0; left: 0; width: 100%; padding: 20px 40px; z-index: 10; }
+        .back-button { font-weight: 600; font-size: 1rem; }
+        .back-button:hover { color: var(--primary-color); }
+        
+        /* --- Movie Banner (Background) --- */
+        .movie-banner {
+            position: relative;
+            padding: 150px 0 50px 0;
+            background-size: cover;
+            background-position: center;
+        }
+        .movie-banner::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(17, 17, 17, 0.8);
+            backdrop-filter: blur(10px);
+        }
+        .movie-banner::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 100px;
+            background: linear-gradient(to top, var(--background-color), transparent);
+        }
+
+        /* --- Movie Content --- */
+        .movie-content {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            gap: 40px;
+        }
+        .movie-poster {
+            width: 300px;
+            height: 450px;
+            flex-shrink: 0;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            object-fit: cover;
+        }
+        .movie-info { flex-grow: 1; }
+        .movie-title { font-size: 3rem; font-weight: 700; line-height: 1.2; margin-bottom: 1rem; }
+        .movie-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; margin-bottom: 1.5rem; color: var(--text-muted-color); }
+        .meta-item { display: flex; align-items: center; gap: 5px; font-weight: 500; }
+        .meta-item .fa-star { color: #f5c518; }
+        .movie-genres { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.5rem; }
+        .genre-tag { background-color: var(--card-color); padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; }
+        .movie-overview { line-height: 1.7; color: #ccc; margin-bottom: 2rem; }
+        
+        /* --- Buttons & Links --- */
+        .action-buttons a {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 25px;
+            border-radius: 5px;
+            font-weight: 600;
+            margin-right: 15px;
+            margin-bottom: 15px;
+            transition: transform 0.2s ease;
+        }
+        .action-buttons a:hover { transform: scale(1.05); }
+        .btn-watch { background-color: var(--primary-color); color: #fff; }
+        .btn-telegram { background-color: #2AABEE; color: #fff; }
+        .btn-download { background-color: #333; color: #fff; }
+        
+        .section-title { font-size: 1.8rem; font-weight: 600; margin: 50px 0 20px 0; border-left: 4px solid var(--primary-color); padding-left: 10px; }
+        
+        /* --- Episodes --- */
+        .episode-list { display: flex; flex-direction: column; gap: 10px; }
+        .episode-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; background-color: var(--card-color); border-radius: 5px; }
+        .episode-title { font-weight: 500; }
+        
+        /* --- Related Movies --- */
+        .related-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 20px 15px;
+        }
+        .movie-card { background-color: var(--card-color); border-radius: 8px; overflow: hidden; transition: transform 0.3s ease; }
+        .movie-card:hover { transform: scale(1.05); }
+        .movie-card-poster { width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: cover; }
+        .movie-card-info { padding: 10px; }
+        .movie-card-title { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        @media (max-width: 768px) {
+            .movie-banner { padding: 100px 0 30px 0; }
+            .movie-content { flex-direction: column; align-items: center; text-align: center; }
+            .movie-poster { width: 60%; max-width: 250px; height: auto; margin-bottom: 20px; }
+            .movie-title { font-size: 2.2rem; }
+            .movie-meta, .movie-genres { justify-content: center; }
+            .action-buttons a { width: 100%; justify-content: center; margin-right: 0; }
+            .episode-item { flex-direction: column; gap: 10px; align-items: stretch; text-align: center;}
+            .episode-item .action-buttons a { width: auto; }
+        }
+    </style>
 </head>
 <body>
-{% macro render_movie_card(m) %}
-  <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
-    <div class="poster-wrapper">
-      <div class="movie-poster-container">
-        <img class="movie-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
-        {% if m.poster_badge %}<div class="poster-badge">{{ m.poster_badge }}</div>{% endif %}
-        {% if m.vote_average and m.vote_average > 0 %}<div class="rating-badge"><i class="fas fa-star"></i> {{ "%.1f"|format(m.vote_average) }}</div>{% endif %}
-      </div>
-      <div class="card-info-static">
-        <h4 class="card-info-title">{{ m.title }}</h4>
-        {% if m.release_date %}<p class="card-info-meta">{{ m.release_date.split('-')[0] }}</p>{% endif %}
-      </div>
-    </div>
-  </a>
-{% endmacro %}
-<header class="detail-header"><a href="{{ url_for('home') }}" class="back-button"><i class="fas fa-arrow-left"></i> Back to Home</a></header>
-{% if movie %}
-<div class="detail-hero" style="min-height: auto; padding-bottom: 60px;">
-  <div class="detail-hero-background" style="background-image: url('{{ movie.poster }}');"></div>
-  <div class="detail-content-wrapper"><img class="detail-poster" src="{{ movie.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ movie.title }}">
-    <div class="detail-info">
-      <h1 class="detail-title">{{ movie.title }}</h1>
-      <div class="detail-meta">
-        {% if movie.release_date %}<span>{{ movie.release_date.split('-')[0] }}</span>{% endif %}
-        {% if movie.vote_average %}<span><i class="fas fa-star" style="color:#f5c518;"></i> {{ "%.1f"|format(movie.vote_average) }}</span>{% endif %}
-        {% if movie.languages %}<span><i class="fas fa-language"></i> {{ movie.languages | join(' • ') }}</span>{% endif %}
-        {% if movie.genres %}<span>{{ movie.genres | join(' • ') }}</span>{% endif %}
-      </div>
-      <p class="detail-overview">{{ movie.overview }}</p>
-      {% if movie.type == 'movie' and movie.watch_link %}<a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="action-btn"><i class="fas fa-play"></i> Watch Now</a>{% endif %}
-      {% if ad_settings.banner_ad_code %}<div class="ad-container">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
-      {% if trailer_key %}<div class="trailer-section"><h3 class="section-title">Watch Trailer</h3><div class="video-container"><iframe src="https://www.youtube.com/embed/{{ trailer_key }}" frameborder="0" allowfullscreen></iframe></div></div>{% endif %}
-      <div style="margin: 20px 0;"><a href="{{ url_for('contact', report_id=movie._id, title=movie.title) }}" class="download-button" style="background-color:#5a5a5a; text-align:center;"><i class="fas fa-flag"></i> Report a Problem</a></div>
-      {% if movie.is_coming_soon %}<h3 class="section-title">Coming Soon</h3>
-      {% elif movie.type == 'movie' %}
-        <div class="download-section">
-          {% if movie.links %}<h3 class="section-title">Download Links</h3>{% for link_item in movie.links %}<div><a class="download-button" href="{{ link_item.url }}" target="_blank" rel="noopener"><i class="fas fa-download"></i> {{ link_item.quality }}</a><button class="copy-button" onclick="copyToClipboard('{{ link_item.url }}')"><i class="fas fa-copy"></i></button></div>{% endfor %}{% endif %}
-          {% if movie.files %}<h3 class="section-title">Get from Telegram</h3>{% for file in movie.files | sort(attribute='quality') %}<a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ file.quality }}" class="action-btn" style="background-color: #2AABEE; display: block; text-align:center; margin-top:10px; margin-bottom: 0;"><i class="fa-brands fa-telegram"></i> Get {{ file.quality }}</a>{% endfor %}{% endif %}
-        </div>
-      {% elif movie.type == 'series' %}
-        <div class="episode-section">
-          <h3 class="section-title">Episodes & Seasons</h3>
-          
-          <!-- [START] MODIFIED SECTION: Season Packs with Quality -->
-          {% if movie.season_packs %}
-            {% for pack in movie.season_packs | sort(attribute='quality') | sort(attribute='season') %}
-              <div class="episode-item" style="background-color: #3e1a1a;">
-                <span class="episode-title">Complete Season {{ pack.season }} Pack ({{ pack.quality }})</span>
-                <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}_{{ pack.quality }}" class="episode-button" style="background-color: var(--netflix-red);"><i class="fas fa-box-open"></i> Get Season Pack</a>
-              </div>
-            {% endfor %}
-          {% endif %}
-          <!-- [END] MODIFIED SECTION -->
 
-          {# --- Individual Episodes --- #}
-          {% if movie.episodes %}
-            {% for ep in movie.episodes | sort(attribute='episode_number') | sort(attribute='season') %}
-              <div class="episode-item">
-                <span class="episode-title">Season {{ ep.season }} - Episode {{ ep.episode_number }}</span>
-                <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="episode-button" style="background-color: #2AABEE;"><i class="fa-brands fa-telegram"></i> Get Episode</a>
-              </div>
-            {% endfor %}
-          {% endif %}
-
-          {% if not movie.episodes and not movie.season_packs %}
-             <p>No episodes or season packs available yet.</p>
-          {% endif %}
+    {% if movie %}
+    <div class="movie-banner" style="background-image: url('{{ (movie.poster or '').replace('w500', 'original') }}');">
+        <header class="header">
+            <a href="{{ url_for('home') }}" class="back-button"><i class="fas fa-arrow-left"></i> Back to Home</a>
+        </header>
+        <div class="container">
+            <div class="movie-content">
+                <img class="movie-poster" src="{{ movie.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ movie.title }}">
+                <div class="movie-info">
+                    <h1 class="movie-title">{{ movie.title }}</h1>
+                    <div class="movie-meta">
+                        {% if movie.release_date %}<span class="meta-item"><i class="fas fa-calendar-alt"></i> {{ movie.release_date.split('-')[0] }}</span>{% endif %}
+                        {% if movie.vote_average %}<span class="meta-item"><i class="fas fa-star"></i> {{ "%.1f"|format(movie.vote_average) }}/10</span>{% endif %}
+                        {% if movie.languages %}<span class="meta-item"><i class="fas fa-language"></i> {{ movie.languages | join(', ') }}</span>{% endif %}
+                    </div>
+                    {% if movie.genres %}
+                    <div class="movie-genres">
+                        {% for genre in movie.genres %}<span class="genre-tag">{{ genre }}</span>{% endfor %}
+                    </div>
+                    {% endif %}
+                    <p class="movie-overview">{{ movie.overview }}</p>
+                    
+                    <div class="action-buttons">
+                        {% if movie.type == 'movie' and movie.watch_link and not movie.is_coming_soon %}
+                            <a href="{{ url_for('watch_movie', movie_id=movie._id) }}" class="btn-watch"><i class="fas fa-play"></i> Watch Now</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
         </div>
-      {% endif %}
     </div>
-  </div>
-</div>
-{% if related_movies %}<div class="related-section-container"><h3 class="section-title" style="margin-left: 50px; color: white;">You Might Also Like</h3><div class="related-grid">{% for m in related_movies %}{{ render_movie_card(m) }}{% endfor %}</div></div>{% endif %}
-{% else %}<div style="display:flex; justify-content:center; align-items:center; height:100vh;"><h2>Content not found.</h2></div>{% endif %}
-<script>
-function copyToClipboard(text) { navigator.clipboard.writeText(text).then(() => alert('Link copied!'), () => alert('Copy failed!')); }
-</script>
-{% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
-{% if ad_settings.social_bar_code %}{{ ad_settings.social_bar_code|safe }}{% endif %}
+
+    <div class="container main-details">
+        {% if ad_settings.banner_ad_code %}<div style="margin: 40px 0; text-align: center;">{{ ad_settings.banner_ad_code|safe }}</div>{% endif %}
+
+        <!-- Download & Episode Section -->
+        {% if movie.is_coming_soon %}
+            <h2 class="section-title">Coming Soon...</h2>
+            <p>This content will be available soon. Stay tuned!</p>
+        {% elif movie.type == 'movie' %}
+            <h2 class="section-title">Download Links</h2>
+            <div class="action-buttons">
+                {% for link_item in movie.links %}
+                    <a href="{{ link_item.url }}" target="_blank" rel="noopener" class="btn-download"><i class="fas fa-download"></i> Download {{ link_item.quality }}</a>
+                {% endfor %}
+                {% for file in movie.files | sort(attribute='quality') %}
+                    <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ file.quality }}" class="btn-telegram"><i class="fab fa-telegram"></i> Get {{ file.quality }}</a>
+                {% endfor %}
+            </div>
+        {% elif movie.type == 'series' %}
+            {% if movie.season_packs %}
+                <h2 class="section-title">Season Packs</h2>
+                <div class="episode-list">
+                {% for pack in movie.season_packs | sort(attribute='quality') | sort(attribute='season') %}
+                    <div class="episode-item">
+                        <span class="episode-title">Complete Season {{ pack.season }} Pack ({{ pack.quality }})</span>
+                        <div class="action-buttons">
+                            <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_S{{ pack.season }}_{{ pack.quality }}" class="btn-telegram"><i class="fas fa-box-open"></i> Get Pack</a>
+                        </div>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+            
+            {% if movie.episodes %}
+                <h2 class="section-title">Episodes</h2>
+                <div class="episode-list">
+                {% for ep in movie.episodes | sort(attribute='episode_number') | sort(attribute='season') %}
+                    <div class="episode-item">
+                        <span class="episode-title">Season {{ ep.season }} - Episode {{ ep.episode_number }}</span>
+                        <div class="action-buttons">
+                           <a href="https://t.me/{{ bot_username }}?start={{ movie._id }}_{{ ep.season }}_{{ ep.episode_number }}" class="btn-telegram"><i class="fab fa-telegram"></i> Get Episode</a>
+                        </div>
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endif %}
+        
+        <!-- Related Movies -->
+        {% if related_movies %}
+            <h2 class="section-title">You Might Also Like</h2>
+            <div class="related-grid">
+                {% for m in related_movies %}
+                <a href="{{ url_for('movie_detail', movie_id=m._id) }}" class="movie-card">
+                    <img class="movie-card-poster" loading="lazy" src="{{ m.poster or 'https://via.placeholder.com/400x600.png?text=No+Image' }}" alt="{{ m.title }}">
+                    <div class="movie-card-info">
+                        <h4 class="movie-card-title">{{ m.title }}</h4>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+
+    {% else %}
+        <div style="display:flex; justify-content:center; align-items:center; height:100vh;"><h2>Content not found.</h2></div>
+    {% endif %}
+
+    {% if ad_settings.popunder_code %}{{ ad_settings.popunder_code|safe }}{% endif %}
 </body>
 </html>
 """
+
 genres_html = """
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" /><title>{{ title }} - MovieZone</title>
@@ -761,12 +919,7 @@ textarea { resize: vertical; min-height: 120px; } button[type="submit"] { backgr
 # --- Helper Functions ---
 # ======================================================================
 
-# [START] MODIFIED SECTION: parse_filename function updated to detect quality in season packs
 def parse_filename(filename):
-    """
-    Final, most robust version of the filename parser.
-    It can now detect complete season packs (with quality) and individual episodes more accurately.
-    """
     LANGUAGE_MAP = {
         'hindi': 'Hindi', 'hin': 'Hindi', 'english': 'English', 'eng': 'English',
         'bengali': 'Bengali', 'bangla': 'Bangla', 'ben': 'Bengali',
@@ -778,19 +931,14 @@ def parse_filename(filename):
         'multi audio': ['Multi Audio']
     }
     JUNK_KEYWORDS = [
-        # Quality keywords are now handled separately, so we can keep them here for title cleaning
         '1080p', '720p', '480p', '2160p', '4k', 'uhd', 'web-dl', 'webdl', 'webrip',
         'brrip', 'bluray', 'dvdrip', 'hdrip', 'hdcam', 'camrip', 'hdts', 'x264',
         'x265', 'hevc', 'avc', 'aac', 'ac3', 'dts', '5.1', '7.1', 'final', 'uncut',
         'extended', 'remastered', 'unrated', 'nf', 'www', 'com', 'net', 'org', 'psa'
     ]
     SEASON_PACK_KEYWORDS = ['complete', 'season', 'pack', 'all episodes', 'zip']
-
-    # Remove file extension and normalize separators
     base_name, _ = os.path.splitext(filename)
     processed_name = re.sub(r'[\._\[\]\(\)\{\}-]', ' ', base_name)
-    
-    # --- Language Detection ---
     found_languages = []
     temp_name_for_lang = processed_name.lower()
     for keyword, lang_name in LANGUAGE_MAP.items():
@@ -800,29 +948,20 @@ def parse_filename(filename):
             else:
                 found_languages.append(lang_name)
     languages = sorted(list(set(found_languages))) if found_languages else []
-
-    # --- Quality Detection ---
     quality_match = re.search(r'\b(\d{3,4}p)\b', processed_name, re.I)
     quality = quality_match.group(1) if quality_match else "HD"
-
-    # --- Season Pack Detection ---
     season_pack_match = re.search(r'^(.*?)[\s\.]*(?:S|Season)[\s\.]?(\d{1,2})', processed_name, re.I)
     if season_pack_match:
         text_after_season = processed_name[season_pack_match.end():].lower()
         is_pack = any(keyword in text_after_season for keyword in SEASON_PACK_KEYWORDS) or not re.search(r'\be\d', text_after_season)
-
         if is_pack:
             title = season_pack_match.group(1).strip()
             season_num = int(season_pack_match.group(2))
-            
             for junk in JUNK_KEYWORDS + SEASON_PACK_KEYWORDS:
                 title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
             final_title = ' '.join(title.split()).title()
-            
             if final_title:
                 return {'type': 'series_pack', 'title': final_title, 'season': season_num, 'quality': quality, 'languages': languages}
-
-    # --- Episodic Detection ---
     series_patterns = [
         re.compile(r'^(.*?)[\s\.]*(?:S|Season)[\s\.]?(\d{1,2})[\s\.]*(?:E|Ep|Episode)[\s\.]?(\d{1,3})', re.I),
         re.compile(r'^(.*?)[\s\.]*(?:E|Ep|Episode)[\s\.]?(\d{1,3})', re.I)
@@ -833,59 +972,43 @@ def parse_filename(filename):
             title = match.group(1).strip()
             season_num = int(match.group(2)) if i == 0 else 1
             episode_num = int(match.group(3)) if i == 0 else int(match.group(2))
-
             for junk in JUNK_KEYWORDS:
                 title = re.sub(r'\b' + re.escape(junk) + r'\b', '', title, flags=re.I)
             final_title = ' '.join(title.split()).title()
-            
             if final_title:
                 return {'type': 'series', 'title': final_title, 'season': season_num, 'episode': episode_num, 'languages': languages}
-
-    # --- Movie Detection (Fallback) ---
     year_match = re.search(r'\b(19[5-9]\d|20\d{2})\b', processed_name)
     year = year_match.group(1) if year_match else None
     title_part = processed_name[:year_match.start()] if year_match else processed_name
-    
     temp_title = title_part
     for lang_key in LANGUAGE_MAP.keys():
         temp_title = re.sub(r'\b' + lang_key + r'\b', '', temp_title, flags=re.I)
     for junk in JUNK_KEYWORDS:
         temp_title = re.sub(r'\b' + re.escape(junk) + r'\b', '', temp_title, flags=re.I)
     final_title = ' '.join(temp_title.split()).title()
-    
-    # For movies, we still use the general quality detection
     return {'type': 'movie', 'title': final_title, 'year': year, 'quality': quality, 'languages': languages} if final_title else None
-# [END] MODIFIED SECTION
 
 def get_tmdb_details_from_api(title, content_type, year=None):
     if not TMDB_API_KEY:
         print("ERROR: TMDB_API_KEY is not set.")
         return None
-    
     search_type = "tv" if content_type in ["series", "series_pack"] else "movie"
-    
     def search_tmdb(query_title):
         print(f"INFO: Searching TMDb for: '{query_title}' (Type: {search_type}, Year: {year})")
         try:
             search_url = f"https://api.themoviedb.org/3/search/{search_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(query_title)}"
-            
             if year and search_type == "movie":
                 search_url += f"&primary_release_year={year}"
-            
             search_res = requests.get(search_url, timeout=10)
             search_res.raise_for_status()
             results = search_res.json().get("results")
-            
             if not results: return None
-            
             tmdb_id = results[0].get("id")
             detail_url = f"https://api.themoviedb.org/3/{search_type}/{tmdb_id}?api_key={TMDB_API_KEY}&append_to_response=videos"
             detail_res = requests.get(detail_url, timeout=10)
             detail_res.raise_for_status()
             res_json = detail_res.json()
-
             trailer_key = next((v['key'] for v in res_json.get("videos", {}).get("results", []) if v.get('type') == 'Trailer' and v.get('site') == 'YouTube'), None)
-            
             details = {
                 "tmdb_id": tmdb_id, "title": res_json.get("title") or res_json.get("name"), 
                 "poster": f"https://image.tmdb.org/t/p/w500{res_json.get('poster_path')}" if res_json.get('poster_path') else None, 
@@ -897,13 +1020,11 @@ def get_tmdb_details_from_api(title, content_type, year=None):
         except requests.RequestException as e:
             print(f"ERROR: TMDb API request failed for '{query_title}'. Reason: {e}")
             return None
-
     tmdb_data = search_tmdb(title)
     if not tmdb_data and len(title.split()) > 1:
         simpler_title = " ".join(title.split()[:-1])
         print(f"INFO: Initial search failed. Retrying with simpler title: '{simpler_title}'")
         tmdb_data = search_tmdb(simpler_title)
-        
     if not tmdb_data: print(f"WARNING: TMDb search found no results for '{title}' after all attempts.")
     return tmdb_data
 
@@ -920,16 +1041,16 @@ def home():
     if query:
         movies_list = list(movies.find({"title": {"$regex": query, "$options": "i"}}).sort('_id', -1))
         return render_template_string(index_html, movies=process_movie_list(movies_list), query=f'Results for "{query}"', is_full_page_list=True)
-    all_badges = sorted([badge for badge in movies.distinct("poster_badge") if badge])
     limit = 12
+    # For hero section, get one item with a valid poster
+    hero_item_query = list(movies.find({"is_coming_soon": {"$ne": True}, "poster": {"$ne": None, "$not": /placeholder/}}).sort('_id', -1).limit(1))
     context = {
         "trending_movies": process_movie_list(list(movies.find({"is_trending": True, "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
         "latest_movies": process_movie_list(list(movies.find({"type": "movie", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
         "latest_series": process_movie_list(list(movies.find({"type": "series", "is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
         "coming_soon_movies": process_movie_list(list(movies.find({"is_coming_soon": True}).sort('_id', -1).limit(limit))),
-        "recently_added": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(6))),
-        "recently_added_full": process_movie_list(list(movies.find({"is_coming_soon": {"$ne": True}}).sort('_id', -1).limit(limit))),
-        "is_full_page_list": False, "query": "", "all_badges": all_badges
+        "recently_added": process_movie_list(hero_item_query),
+        "is_full_page_list": False, "query": ""
     }
     return render_template_string(index_html, **context)
 
@@ -940,7 +1061,7 @@ def movie_detail(movie_id):
         if not movie: return "Content not found", 404
         related_movies = []
         if movie.get("genres"):
-            related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": ObjectId(movie_id)}}).limit(12))
+            related_movies = list(movies.find({"genres": {"$in": movie["genres"]}, "_id": {"$ne": ObjectId(movie_id)}}).limit(6))
         return render_template_string(detail_html, movie=movie, trailer_key=movie.get("trailer_key"), related_movies=process_movie_list(related_movies))
     except Exception: return "Content not found", 404
 
@@ -1023,7 +1144,6 @@ def save_ads():
     settings.update_one({}, {"$set": ad_codes}, upsert=True)
     return redirect(url_for('admin'))
 
-# [START] MODIFIED SECTION: edit_movie function to handle season packs with quality
 @app.route('/edit_movie/<movie_id>', methods=["GET", "POST"])
 @requires_auth
 def edit_movie(movie_id):
@@ -1071,7 +1191,6 @@ def edit_movie(movie_id):
         return redirect(url_for('admin'))
 
     return render_template_string(edit_html, movie=movie_obj)
-# [END] MODIFIED SECTION
 
 
 @app.route('/delete_movie/<movie_id>')
@@ -1114,7 +1233,6 @@ def delete_feedback(feedback_id):
     return redirect(url_for('admin'))
 
 
-# [START] MODIFIED SECTION: Fully updated telegram_webhook function
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     data = request.get_json()
@@ -1139,7 +1257,6 @@ def telegram_webhook():
 
         tmdb_data = get_tmdb_details_from_api(parsed_info['title'], parsed_info['type'], parsed_info.get('year'))
 
-        # Function to create or find content entry
         def get_or_create_content_entry(tmdb_details, parsed_details):
             if tmdb_details and tmdb_details.get("tmdb_id"):
                 print(f"INFO: TMDb data found for '{tmdb_details['title']}'. Processing with full details.")
@@ -1185,17 +1302,14 @@ def telegram_webhook():
         if parsed_info.get('languages'):
             update_op["$addToSet"] = {"languages": {"$each": parsed_info['languages']}}
 
-        # Logic for adding files/episodes/packs
         if parsed_info['type'] == 'movie':
             quality = parsed_info.get('quality', 'HD')
             new_file = {"quality": quality, "message_id": post['message_id']}
-            # Pull old entry with the same quality before pushing new one
             movies.update_one({"_id": content_entry['_id']}, {"$pull": {"files": {"quality": new_file['quality']}}})
             update_op.setdefault("$push", {})["files"] = new_file
         
         elif parsed_info['type'] == 'series_pack':
             new_pack = {"season": parsed_info['season'], "quality": parsed_info['quality'], "message_id": post['message_id']}
-            # Pull old entry with the same season AND quality
             movies.update_one(
                 {"_id": content_entry['_id']}, 
                 {"$pull": {"season_packs": {"season": new_pack['season'], "quality": new_pack['quality']}}}
@@ -1204,7 +1318,6 @@ def telegram_webhook():
 
         elif parsed_info['type'] == 'series':
             new_episode = {"season": parsed_info['season'], "episode_number": parsed_info['episode'], "message_id": post['message_id']}
-            # Pull old entry with the same season and episode number
             movies.update_one(
                 {"_id": content_entry['_id']},
                 {"$pull": {"episodes": {"season": new_episode['season'], "episode_number": new_episode['episode_number']}}}
@@ -1231,7 +1344,7 @@ def telegram_webhook():
                     message_to_copy_id = None
                     file_info_text = ""
                     
-                    if len(payload_parts) == 3 and payload_parts[1].startswith('S'): # Season Pack: docId_S<season>_<quality>
+                    if len(payload_parts) == 3 and payload_parts[1].startswith('S'): # Season Pack
                         season_num_str = payload_parts[1][1:]
                         season_num = int(season_num_str)
                         quality = payload_parts[2]
@@ -1240,14 +1353,14 @@ def telegram_webhook():
                             message_to_copy_id = pack.get('message_id')
                             file_info_text = f"Complete Season {season_num} ({quality})"
 
-                    elif content.get('type') == 'series' and len(payload_parts) == 3: # Episodic: docId_<season>_<episode>
+                    elif content.get('type') == 'series' and len(payload_parts) == 3: # Episodic
                         s_num, e_num = int(payload_parts[1]), int(payload_parts[2])
                         episode = next((ep for ep in content.get('episodes', []) if ep.get('season') == s_num and ep.get('episode_number') == e_num), None)
                         if episode: 
                             message_to_copy_id = episode.get('message_id')
                             file_info_text = f"S{s_num:02d}E{e_num:02d}"
 
-                    elif content.get('type') == 'movie' and len(payload_parts) == 2: # Movie: docId_<quality>
+                    elif content.get('type') == 'movie' and len(payload_parts) == 2: # Movie
                         quality = payload_parts[1]
                         file = next((f for f in content.get('files', []) if f.get('quality') == quality), None)
                         if file: 
@@ -1285,7 +1398,6 @@ def telegram_webhook():
                      requests.get(f"{TELEGRAM_API_URL}/sendMessage", params={'chat_id': chat_id, 'text': welcome_message})
 
     return jsonify(status='ok')
-# [END] MODIFIED SECTION
 
 
 @app.route('/notify/<movie_id>')
