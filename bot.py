@@ -1667,14 +1667,20 @@ def telegram_webhook():
         tmdb_data = get_tmdb_details_from_title(parsed_info['title'], parsed_info['type'], parsed_info.get('year'))
 
         def get_or_create_content_entry(tmdb_details, parsed_details):
+            # [FIX] Determine content type and default category beforehand
+            is_movie_type = parsed_details['type'] == 'movie'
+            content_type = "movie" if is_movie_type else "series"
+            default_category = ["Latest Movie"] if is_movie_type else ["Latest Series"]
+
             if tmdb_details and tmdb_details.get("tmdb_id"):
                 print(f"INFO: TMDb data found for '{tmdb_details['title']}'. Processing with full details.")
                 tmdb_id = tmdb_details.get("tmdb_id")
                 existing_entry = movies.find_one({"tmdb_id": tmdb_id})
                 if not existing_entry:
                     base_doc = {
-                        **tmdb_details, "type": "movie" if parsed_details['type'] == 'movie' else "series",
-                        "languages": [], "episodes": [], "season_packs": [], "files": [], "categories": [],
+                        **tmdb_details, "type": content_type,
+                        "languages": [], "episodes": [], "season_packs": [], "files": [],
+                        "categories": default_category,  # [FIX] Assign default category
                         "is_coming_soon": False, "streaming_links": []
                     }
                     movies.insert_one(base_doc)
@@ -1690,10 +1696,11 @@ def telegram_webhook():
                 })
                 if not existing_entry:
                     shell_doc = {
-                        "title": parsed_details['title'], "type": "movie" if parsed_details['type'] == 'movie' else "series",
+                        "title": parsed_details['title'], "type": content_type,
                         "poster": PLACEHOLDER_POSTER, "overview": "Details will be updated soon.",
                         "release_date": None, "genres": [], "vote_average": 0, "trailer_link": None, "tmdb_id": None,
-                        "languages": [], "episodes": [], "season_packs": [], "files": [], "categories": [],
+                        "languages": [], "episodes": [], "season_packs": [], "files": [],
+                        "categories": default_category,  # [FIX] Assign default category
                         "is_coming_soon": False, "streaming_links": []
                     }
                     movies.insert_one(shell_doc)
@@ -1825,3 +1832,4 @@ def send_manual_notification(movie_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+```
