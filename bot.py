@@ -4,7 +4,6 @@ import re
 import requests
 import json
 import uuid
-import math
 from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -47,24 +46,27 @@ except Exception as e:
 def clean_filename(filename):
     """
     ফাইলের নাম ক্লিন করে মেইন টাইটেল বের করে।
-    এটি 'Combined', 'S01', '[E09' দেখলেই থেমে যাবে।
+    এটি (., -, _, +) সহ সব চিহ্ন রিমুভ করবে এবং সাল/সিজন দেখলে থেমে যাবে।
     """
+    # ১. এক্সটেনশন বাদ দেওয়া
     name = os.path.splitext(filename)[0]
-    name = name.replace(".", " ").replace("_", " ")
-    
-    # নাম ক্লিন করার সময় এই কিওয়ার্ডগুলো পেলেই থামা হবে
-    stop_pattern = r'(\bS\d+|Season|Combined|Episodes?|Ep\s*\d+|\[E\d+|\b(19|20)\d{2}\b|\b(?:480|720|1080|2160)[pP]\b)'
+
+    # ২. সব ধরণের সেপারেটর (ডট, হাইফেন, প্লাস, আন্ডারস্কোর, ব্র্যাকেট) কে স্পেস দিয়ে রিপ্লেস করা
+    # এতে 'Open.Season' হয়ে যাবে 'Open Season'
+    name = re.sub(r'[._\-\+\[\]\(\)]', ' ', name)
+
+    # ৩. নাম কাটার বাউন্ডারি নির্ধারণ (যেসব শব্দ দেখলে নাম নেওয়া বন্ধ করবে)
+    # সাল (19xx-20xx), সিজন (S01), এপিসোড (E01), কোয়ালিটি (1080p), ভাষা বা সোর্স
+    stop_pattern = r'(\b(19|20)\d{2}\b|\bS\d+|\bSeason|\bEp?\s*\d+|\b480p|\b720p|\b1080p|\b2160p|\bHD|\bWeb-?dl|\bBluray|\bDual|\bHindi|\bBangla)'
     
     match = re.search(stop_pattern, name, re.IGNORECASE)
     if match:
-        name = name[:match.start()]
+        name = name[:match.start()] # স্টপ প্যাটার্ন পাওয়ার আগের অংশটুকু নিবে
+
+    # ৪. অতিরিক্ত স্পেস রিমুভ করা
+    name = re.sub(r'\s+', ' ', name).strip()
     
-    # অপ্রয়োজনীয় শব্দ রিমুভ (ভাষা ও ফরম্যাট)
-    junk_words = r'\b(hindi|dual|multi|audio|dubbed|sub|esub|web-dl|bluray|rip|x264|hevc|10bit|kor|korean|eng|jap|bengali|bangla)\b'
-    name = re.sub(junk_words, '', name, flags=re.IGNORECASE)
-    name = re.sub(r'[\[\]\(\)\{\}]', '', name)
-    
-    return name.strip()
+    return name
 
 def get_file_quality(filename):
     filename = filename.lower()
@@ -75,35 +77,23 @@ def get_file_quality(filename):
     return "HD"
 
 def detect_language(text):
-    """
-    স্মার্টলি ফাইলের নাম থেকে ভাষা ডিটেক্ট করে।
-    """
     text = text.lower()
     detected = []
 
-    # ১. হাই প্রায়োরিটি কিওয়ার্ড (Multi/Dual)
     if re.search(r'\b(multi|multi audio)\b', text):
-        return "Multi Audio" # মাল্টি থাকলে বাকিগুলো দেখানোর দরকার নেই সাধারণত
+        return "Multi Audio"
     
     if re.search(r'\b(dual|dual audio)\b', text):
         detected.append("Dual Audio")
 
-    # ২. নির্দিষ্ট ভাষার তালিকা
     lang_map = {
         'Bengali': ['bengali', 'bangla', 'ben'],
         'Hindi': ['hindi', 'hin'],
         'English': ['english', 'eng'],
         'Tamil': ['tamil', 'tam'],
         'Telugu': ['telugu', 'tel'],
-        'Malayalam': ['malayalam', 'mal'],
-        'Kannada': ['kannada', 'kan'],
         'Korean': ['korean', 'kor'],
-        'Japanese': ['japanese', 'jap'],
-        'Chinese': ['chinese', 'chi'],
-        'Spanish': ['spanish', 'spa'],
-        'French': ['french', 'fre'],
-        'Urdu': ['urdu'],
-        'Punjabi': ['punjabi', 'pan']
+        'Japanese': ['japanese', 'jap']
     }
 
     for lang_name, keywords in lang_map.items():
@@ -111,57 +101,49 @@ def detect_language(text):
         if re.search(pattern, text):
             detected.append(lang_name)
 
-    # যদি কিছুই না পাওয়া যায়
     if not detected:
-        return "English" # ডিফল্ট
+        return "English"
 
-    # ডুপ্লিকেট রিমুভ করে ফরম্যাট করা (যেমন: Dual Audio + Hindi + English)
     return " + ".join(list(dict.fromkeys(detected)))
 
 def get_episode_label(filename):
-    """
-    স্মার্টলি এপিসোড নম্বর বা রেঞ্জ বের করে।
-    """
     label = ""
     season = ""
     
-    # ১. সিজন খোঁজা
     match_s = re.search(r'\b(S|Season)\s*(\d+)', filename, re.IGNORECASE)
     if match_s:
         season = f"S{int(match_s.group(2)):02d}"
 
-    # ২. রেঞ্জ খোঁজা (E09-E16)
     match_range = re.search(r'E(\d+)\s*-\s*E?(\d+)', filename, re.IGNORECASE)
     if match_range:
-        start = int(match_range.group(1))
-        end = int(match_range.group(2))
+        start, end = int(match_range.group(1)), int(match_range.group(2))
         episode_part = f"E{start:02d}-{end:02d}"
-        label = f"{season} {episode_part}" if season else episode_part
-        return label.strip()
+        return f"{season} {episode_part}" if season else episode_part
 
-    # ৩. সাধারণ S01E05
     match_se = re.search(r'\bS(\d+)\s*E(\d+)\b', filename, re.IGNORECASE)
     if match_se:
         return f"S{int(match_se.group(1)):02d} E{int(match_se.group(2)):02d}"
     
-    # ৪. শুধু Episode 05 (কিন্তু সাল নয়)
     match_ep = re.search(r'\b(Episode|Ep|E)\s*(\d+)\b', filename, re.IGNORECASE)
     if match_ep:
         ep_num = int(match_ep.group(2))
         if ep_num < 1900: 
             return f"{season} Episode {ep_num}".strip()
     
-    # ৫. শুধু সিজন
-    if season and not label:
-        return f"Season {int(match_s.group(2))}"
-        
+    if season: return f"Season {int(match_s.group(2))}"
     return None
 
-def get_tmdb_details(title, content_type="movie"):
+def get_tmdb_details(title, content_type="movie", year=None):
     if not TMDB_API_KEY: return {"title": title}
     tmdb_type = "tv" if content_type == "series" else "movie"
     try:
-        search_url = f"https://api.themoviedb.org/3/search/{tmdb_type}?api_key={TMDB_API_KEY}&query={requests.utils.quote(title)}"
+        query_str = requests.utils.quote(title)
+        search_url = f"https://api.themoviedb.org/3/search/{tmdb_type}?api_key={TMDB_API_KEY}&query={query_str}"
+        
+        # যদি সাল পাওয়া যায় এবং এটি মুভি হয়, তাহলে সাল দিয়ে সার্চ হবে
+        if year and tmdb_type == "movie":
+            search_url += f"&year={year}"
+
         data = requests.get(search_url, timeout=5).json()
         if data.get("results"):
             res = data["results"][0]
@@ -195,11 +177,7 @@ def check_auth():
 @app.context_processor
 def inject_globals():
     ad_codes = settings.find_one() or {}
-    return dict(
-        ad_settings=ad_codes,
-        BOT_USERNAME=BOT_USERNAME,
-        site_name="MovieZone"
-    )
+    return dict(ad_settings=ad_codes, BOT_USERNAME=BOT_USERNAME, site_name="MovieZone")
 
 # === TELEGRAM WEBHOOK ===
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
@@ -237,27 +215,31 @@ def telegram_webhook():
         raw_caption = msg.get('caption')
         raw_input = raw_caption if raw_caption else file_name
         
-        # ১. টাইটেল ক্লিন করা
+        # ১. টাইটেল ক্লিন করা (নতুন ফাংশন দিয়ে)
         search_title = clean_filename(raw_input) 
+
+        # ২. সাল বের করা (TMDB তে সঠিক রেজাল্ট পেতে সাহায্য করবে)
+        year_match = re.search(r'\b(19|20)\d{2}\b', raw_input)
+        search_year = year_match.group(0) if year_match else None
         
-        # ২. কন্টেন্ট টাইপ নির্ধারণ
+        # ৩. কন্টেন্ট টাইপ নির্ধারণ
         content_type = "movie"
         if re.search(r'(S\d+|Season|Episode|Ep\s*\d+|Combined|E\d+-E\d+)', file_name, re.IGNORECASE) or re.search(r'(S\d+|Season)', str(raw_caption), re.IGNORECASE):
             content_type = "series"
 
-        # ৩. TMDB ডিটেইলস
-        tmdb_data = get_tmdb_details(search_title, content_type)
+        # ৪. TMDB ডিটেইলস (সাল সহ কল করা হচ্ছে)
+        tmdb_data = get_tmdb_details(search_title, content_type, search_year)
         final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
         
-        # ৪. এপিসোড লেবেল
+        # ৫. এপিসোড লেবেল
         episode_label = get_episode_label(file_name)
         if content_type == "series" and not episode_label:
             clean_part = file_name.replace(search_title, "").replace(".", " ").strip()
             if len(clean_part) > 3:
                 episode_label = clean_part[:25]
 
-        # ৫. ল্যাঙ্গুয়েজ ডিটেকশন (UPDATED)
+        # ৬. ল্যাঙ্গুয়েজ ডিটেকশন
         language = detect_language(raw_input)
 
         unique_code = str(uuid.uuid4())[:8]
@@ -288,7 +270,6 @@ def telegram_webhook():
             else:
                 should_notify = False
 
-            # নতুন ল্যাঙ্গুয়েজ আসলে সেটাও আপডেট করা যেতে পারে (অপশনাল, এখানে শুধু ফাইল অ্যাড হচ্ছে)
             movies.update_one(
                 {"_id": existing_movie['_id']},
                 {"$push": {"files": file_obj}, "$set": {"updated_at": datetime.utcnow()}}
@@ -303,7 +284,7 @@ def telegram_webhook():
                 "backdrop": tmdb_data.get('backdrop'),
                 "release_date": tmdb_data.get('release_date'),
                 "vote_average": tmdb_data.get('vote_average'),
-                "language": language, # ডিটেক্ট করা ল্যাঙ্গুয়েজ এখানে বসবে
+                "language": language,
                 "type": content_type,
                 "files": [file_obj],
                 "created_at": datetime.utcnow(),
@@ -316,14 +297,12 @@ def telegram_webhook():
         if movie_id and WEBSITE_URL:
             dl_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
             
-            # Edit Source Channel
+            # Source Channel Button Update
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
                 'reply_markup': json.dumps({
-                    "inline_keyboard": [[
-                        {"text": "▶️ Download from Website", "url": dl_link}
-                    ]]
+                    "inline_keyboard": [[{"text": "▶️ Download from Website", "url": dl_link}]]
                 })
             }
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
@@ -332,8 +311,7 @@ def telegram_webhook():
             # Public Channel Notification
             if PUBLIC_CHANNEL_ID and should_notify:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
-                if episode_label:
-                    notify_caption += f"📌 {escape_markdown(episode_label)}\n"
+                if episode_label: notify_caption += f"📌 {escape_markdown(episode_label)}\n"
                 
                 notify_caption += f"\n⭐ Rating: {tmdb_data.get('vote_average', 'N/A')}\n"
                 notify_caption += f"📅 Year: {(tmdb_data.get('release_date') or 'N/A')[:4]}\n"
@@ -345,11 +323,7 @@ def telegram_webhook():
                 notify_payload = {
                     'chat_id': PUBLIC_CHANNEL_ID,
                     'parse_mode': 'Markdown',
-                    'reply_markup': json.dumps({
-                        "inline_keyboard": [[
-                            {"text": "📥 Download / Watch Online", "url": dl_link}
-                        ]]
-                    })
+                    'reply_markup': json.dumps({"inline_keyboard": [[{"text": "📥 Download / Watch Online", "url": dl_link}]]})
                 }
 
                 if tmdb_data.get('poster'):
@@ -1005,7 +979,7 @@ def admin_settings_page():
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_settings)
     return render_template_string(full_html, settings=curr_settings, active='settings')
 
-# API for Admin Panel (JS Fetch)
+# API for Admin Panel
 @app.route('/admin/api/tmdb')
 def api_tmdb_search():
     if not check_auth(): return jsonify({'error': 'Unauthorized'}), 401
@@ -1020,7 +994,6 @@ def api_tmdb_search():
         return jsonify({'error': 'TMDB Request Failed'})
 
 if __name__ == '__main__':
-    # Webhook Auto-Set
     if WEBSITE_URL and BOT_TOKEN:
         hook_url = f"{WEBSITE_URL.rstrip('/')}/webhook/{BOT_TOKEN}"
         try: requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={hook_url}")
