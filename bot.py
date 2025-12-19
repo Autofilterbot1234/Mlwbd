@@ -46,26 +46,14 @@ except Exception as e:
 def clean_filename(filename):
     """
     ফাইলের নাম ক্লিন করে মেইন টাইটেল বের করে।
-    এটি (., -, _, +) সহ সব চিহ্ন রিমুভ করবে এবং সাল/সিজন দেখলে থেমে যাবে।
     """
-    # ১. এক্সটেনশন বাদ দেওয়া
     name = os.path.splitext(filename)[0]
-
-    # ২. সব ধরণের সেপারেটর (ডট, হাইফেন, প্লাস, আন্ডারস্কোর, ব্র্যাকেট) কে স্পেস দিয়ে রিপ্লেস করা
-    # এতে 'Open.Season' হয়ে যাবে 'Open Season'
     name = re.sub(r'[._\-\+\[\]\(\)]', ' ', name)
-
-    # ৩. নাম কাটার বাউন্ডারি নির্ধারণ (যেসব শব্দ দেখলে নাম নেওয়া বন্ধ করবে)
-    # সাল (19xx-20xx), সিজন (S01), এপিসোড (E01), কোয়ালিটি (1080p), ভাষা বা সোর্স
     stop_pattern = r'(\b(19|20)\d{2}\b|\bS\d+|\bSeason|\bEp?\s*\d+|\b480p|\b720p|\b1080p|\b2160p|\bHD|\bWeb-?dl|\bBluray|\bDual|\bHindi|\bBangla)'
-    
     match = re.search(stop_pattern, name, re.IGNORECASE)
     if match:
-        name = name[:match.start()] # স্টপ প্যাটার্ন পাওয়ার আগের অংশটুকু নিবে
-
-    # ৪. অতিরিক্ত স্পেস রিমুভ করা
+        name = name[:match.start()]
     name = re.sub(r'\s+', ' ', name).strip()
-    
     return name
 
 def get_file_quality(filename):
@@ -79,12 +67,8 @@ def get_file_quality(filename):
 def detect_language(text):
     text = text.lower()
     detected = []
-
-    if re.search(r'\b(multi|multi audio)\b', text):
-        return "Multi Audio"
-    
-    if re.search(r'\b(dual|dual audio)\b', text):
-        detected.append("Dual Audio")
+    if re.search(r'\b(multi|multi audio)\b', text): return "Multi Audio"
+    if re.search(r'\b(dual|dual audio)\b', text): detected.append("Dual Audio")
 
     lang_map = {
         'Bengali': ['bengali', 'bangla', 'ben'],
@@ -95,24 +79,19 @@ def detect_language(text):
         'Korean': ['korean', 'kor'],
         'Japanese': ['japanese', 'jap']
     }
-
     for lang_name, keywords in lang_map.items():
         pattern = r'\b(' + '|'.join(keywords) + r')\b'
         if re.search(pattern, text):
             detected.append(lang_name)
 
-    if not detected:
-        return "English"
-
+    if not detected: return "English"
     return " + ".join(list(dict.fromkeys(detected)))
 
 def get_episode_label(filename):
     label = ""
     season = ""
-    
     match_s = re.search(r'\b(S|Season)\s*(\d+)', filename, re.IGNORECASE)
-    if match_s:
-        season = f"S{int(match_s.group(2)):02d}"
+    if match_s: season = f"S{int(match_s.group(2)):02d}"
 
     match_range = re.search(r'E(\d+)\s*-\s*E?(\d+)', filename, re.IGNORECASE)
     if match_range:
@@ -121,34 +100,59 @@ def get_episode_label(filename):
         return f"{season} {episode_part}" if season else episode_part
 
     match_se = re.search(r'\bS(\d+)\s*E(\d+)\b', filename, re.IGNORECASE)
-    if match_se:
-        return f"S{int(match_se.group(1)):02d} E{int(match_se.group(2)):02d}"
+    if match_se: return f"S{int(match_se.group(1)):02d} E{int(match_se.group(2)):02d}"
     
     match_ep = re.search(r'\b(Episode|Ep|E)\s*(\d+)\b', filename, re.IGNORECASE)
     if match_ep:
         ep_num = int(match_ep.group(2))
-        if ep_num < 1900: 
-            return f"{season} Episode {ep_num}".strip()
+        if ep_num < 1900: return f"{season} Episode {ep_num}".strip()
     
     if season: return f"Season {int(match_s.group(2))}"
     return None
 
+# --- UPDATED TMDB FUNCTION ---
 def get_tmdb_details(title, content_type="movie", year=None):
     if not TMDB_API_KEY: return {"title": title}
     tmdb_type = "tv" if content_type == "series" else "movie"
     try:
         query_str = requests.utils.quote(title)
         search_url = f"https://api.themoviedb.org/3/search/{tmdb_type}?api_key={TMDB_API_KEY}&query={query_str}"
-        
-        # যদি সাল পাওয়া যায় এবং এটি মুভি হয়, তাহলে সাল দিয়ে সার্চ হবে
         if year and tmdb_type == "movie":
             search_url += f"&year={year}"
 
         data = requests.get(search_url, timeout=5).json()
         if data.get("results"):
             res = data["results"][0]
+            m_id = res.get("id")
+            
+            # --- Fetch Extra Details (Credits, Videos) ---
+            details_url = f"https://api.themoviedb.org/3/{tmdb_type}/{m_id}?api_key={TMDB_API_KEY}&append_to_response=credits,videos"
+            extra = requests.get(details_url, timeout=5).json()
+
+            # Extract Trailer
+            trailer_key = None
+            if extra.get('videos', {}).get('results'):
+                for vid in extra['videos']['results']:
+                    if vid['type'] == 'Trailer' and vid['site'] == 'YouTube':
+                        trailer_key = vid['key']
+                        break
+            
+            # Extract Cast
+            cast_list = []
+            if extra.get('credits', {}).get('cast'):
+                for actor in extra['credits']['cast'][:6]:
+                    cast_list.append({
+                        'name': actor['name'],
+                        'img': f"https://image.tmdb.org/t/p/w185{actor['profile_path']}" if actor.get('profile_path') else None
+                    })
+
+            # Genres & Runtime
+            genres = [g['name'] for g in extra.get('genres', [])]
+            runtime = extra.get("runtime") or (extra.get("episode_run_time")[0] if extra.get("episode_run_time") else None)
+
             poster = f"https://image.tmdb.org/t/p/w500{res['poster_path']}" if res.get('poster_path') else None
             backdrop = f"https://image.tmdb.org/t/p/w1280{res['backdrop_path']}" if res.get('backdrop_path') else None
+
             return {
                 "tmdb_id": res.get("id"),
                 "title": res.get("name") if tmdb_type == "tv" else res.get("title"),
@@ -156,7 +160,11 @@ def get_tmdb_details(title, content_type="movie", year=None):
                 "poster": poster,
                 "backdrop": backdrop,
                 "release_date": res.get("first_air_date") if tmdb_type == "tv" else res.get("release_date"),
-                "vote_average": res.get("vote_average")
+                "vote_average": res.get("vote_average"),
+                "genres": genres,        
+                "runtime": runtime, 
+                "trailer": trailer_key,  
+                "cast": cast_list
             }
     except Exception as e:
         print(f"TMDB Error: {e}")
@@ -215,33 +223,25 @@ def telegram_webhook():
         raw_caption = msg.get('caption')
         raw_input = raw_caption if raw_caption else file_name
         
-        # ১. টাইটেল ক্লিন করা (নতুন ফাংশন দিয়ে)
         search_title = clean_filename(raw_input) 
-
-        # ২. সাল বের করা (TMDB তে সঠিক রেজাল্ট পেতে সাহায্য করবে)
         year_match = re.search(r'\b(19|20)\d{2}\b', raw_input)
         search_year = year_match.group(0) if year_match else None
         
-        # ৩. কন্টেন্ট টাইপ নির্ধারণ
         content_type = "movie"
         if re.search(r'(S\d+|Season|Episode|Ep\s*\d+|Combined|E\d+-E\d+)', file_name, re.IGNORECASE) or re.search(r'(S\d+|Season)', str(raw_caption), re.IGNORECASE):
             content_type = "series"
 
-        # ৪. TMDB ডিটেইলস (সাল সহ কল করা হচ্ছে)
         tmdb_data = get_tmdb_details(search_title, content_type, search_year)
         final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
         
-        # ৫. এপিসোড লেবেল
         episode_label = get_episode_label(file_name)
         if content_type == "series" and not episode_label:
             clean_part = file_name.replace(search_title, "").replace(".", " ").strip()
             if len(clean_part) > 3:
                 episode_label = clean_part[:25]
 
-        # ৬. ল্যাঙ্গুয়েজ ডিটেকশন
         language = detect_language(raw_input)
-
         unique_code = str(uuid.uuid4())[:8]
 
         file_obj = {
@@ -284,6 +284,10 @@ def telegram_webhook():
                 "backdrop": tmdb_data.get('backdrop'),
                 "release_date": tmdb_data.get('release_date'),
                 "vote_average": tmdb_data.get('vote_average'),
+                "genres": tmdb_data.get('genres'),
+                "runtime": tmdb_data.get('runtime'),
+                "trailer": tmdb_data.get('trailer'),
+                "cast": tmdb_data.get('cast'),
                 "language": language,
                 "type": content_type,
                 "files": [file_obj],
@@ -293,11 +297,9 @@ def telegram_webhook():
             res = movies.insert_one(new_movie)
             movie_id = res.inserted_id
 
-        # --- Notification Logic ---
         if movie_id and WEBSITE_URL:
             dl_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
             
-            # Source Channel Button Update
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
@@ -308,7 +310,6 @@ def telegram_webhook():
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # Public Channel Notification
             if PUBLIC_CHANNEL_ID and should_notify:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
                 if episode_label: notify_caption += f"📌 {escape_markdown(episode_label)}\n"
@@ -493,6 +494,7 @@ index_template = """
 </html>
 """
 
+# --- UPDATED DETAIL TEMPLATE ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -516,7 +518,7 @@ detail_template = """
         .poster-box img { width: 100%; display: block; }
         
         h1 { font-size: 1.6rem; margin-bottom: 5px; line-height: 1.2; }
-        .meta-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 15px; font-size: 0.8rem; color: #bbb; }
+        .meta-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 8px; font-size: 0.8rem; color: #bbb; }
         .tag { background: #333; padding: 3px 8px; border-radius: 4px; }
         .overview { font-size: 0.9rem; line-height: 1.6; color: #ccc; margin-bottom: 25px; text-align: justify; }
         
@@ -544,9 +546,17 @@ detail_template = """
             transition: 0.3s;
         }
         .btn-dl:hover { background: #0077b5; transform: translateY(-2px); }
-        
+
+        /* New Styles for Badges & Cast */
+        .badge-q { padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
+        .q-4k { background: #d63384; color: #fff; box-shadow: 0 0 10px rgba(214, 51, 132, 0.5); }
+        .q-1080p { background: #6f42c1; color: #fff; }
+        .q-720p { background: #0d6efd; color: #fff; }
+        .q-480p { background: #198754; color: #fff; }
+
         @media (min-width: 600px) {
             .movie-info { flex-direction: row; text-align: left; align-items: flex-end; padding: 0 20px; }
+            .meta-tags { justify-content: flex-start; }
             .overview { text-align: left; padding: 0 20px; }
             .backdrop { height: 350px; margin-bottom: -100px; }
             .poster-box { width: 180px; }
@@ -571,8 +581,14 @@ detail_template = """
             <div class="meta-tags">
                 <span class="tag"><i class="fas fa-star" style="color:#ffb400"></i> {{ movie.vote_average }}</span>
                 <span class="tag">{{ (movie.release_date or 'N/A')[:4] }}</span>
+                {% if movie.runtime %}<span class="tag"><i class="far fa-clock"></i> {{ movie.runtime }} min</span>{% endif %}
                 <span class="tag" style="background: var(--primary); color: #fff;">{{ movie.language or 'Eng' }}</span>
                 <span class="tag">{{ movie.type|upper }}</span>
+            </div>
+            <div style="margin-top:5px; font-size: 0.85rem; color: #aaa;">
+                {% if movie.genres %}
+                    {{ movie.genres|join(', ') }}
+                {% endif %}
             </div>
         </div>
     </div>
@@ -580,7 +596,46 @@ detail_template = """
     <div style="height: 20px;"></div>
     <p class="overview">{{ movie.overview }}</p>
 
+    <!-- Trailer Section -->
+    {% if movie.trailer %}
+    <div style="margin-bottom: 25px; padding: 0 5px;">
+        <div class="section-head"><i class="fab fa-youtube"></i> Watch Trailer</div>
+        <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px; border: 1px solid #333;">
+            <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border:0;" 
+                    src="https://www.youtube.com/embed/{{ movie.trailer }}" allowfullscreen></iframe>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Cast Section -->
+    {% if movie.cast %}
+    <div style="margin-bottom: 25px; padding: 0 5px;">
+        <div class="section-head"><i class="fas fa-users"></i> Top Cast</div>
+        <div style="display: flex; gap: 15px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none;">
+            {% for actor in movie.cast %}
+            <div style="min-width: 90px; text-align: center;">
+                <img src="{{ actor.img or 'https://via.placeholder.com/90x90?text=No+Img' }}" 
+                     style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #333; margin-bottom: 5px;">
+                <div style="font-size: 0.75rem; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ actor.name }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     {% if ad_settings.banner_ad %}<div style="margin: 20px 0; text-align:center;">{{ ad_settings.banner_ad|safe }}</div>{% endif %}
+
+    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+        <a href="whatsapp://send?text=Download {{ movie.title }} - {{ request.url }}" class="btn-dl" style="background: #25D366; flex: 1; margin:0;">
+            <i class="fab fa-whatsapp"></i> Share
+        </a>
+        <a href="https://www.facebook.com/sharer/sharer.php?u={{ request.url }}" target="_blank" class="btn-dl" style="background: #1877F2; flex: 1; margin:0;">
+            <i class="fab fa-facebook-f"></i> Share
+        </a>
+        <button onclick="navigator.clipboard.writeText(window.location.href); alert('Link Copied!')" class="btn-dl" style="background: #333; flex: 1; margin:0;">
+            <i class="fas fa-link"></i> Copy
+        </button>
+    </div>
 
     <div class="file-section">
         <div class="section-head"><i class="fas fa-download"></i> Download Links</div>
@@ -590,7 +645,13 @@ detail_template = """
                 <div class="file-details">
                     {% if file.episode_label %}
                         <h4 style="color: #ffb400; font-weight: 700;">{{ file.episode_label }}</h4>
-                        <span style="color: #fff;">{{ file.quality }}</span>
+                        <!-- Quality Badge Logic -->
+                        {% set q_class = 'q-480p' %}
+                        {% if '1080p' in file.quality %} {% set q_class = 'q-1080p' %}
+                        {% elif '720p' in file.quality %} {% set q_class = 'q-720p' %}
+                        {% elif '4K' in file.quality %} {% set q_class = 'q-4k' %}
+                        {% endif %}
+                        <span class="badge-q {{ q_class }}">{{ file.quality }}</span>
                     {% else %}
                         <h4>{{ file.quality }}</h4>
                     {% endif %}
@@ -598,7 +659,6 @@ detail_template = """
                     <div style="font-size: 0.75rem; color: #888; margin-top: 3px;">
                         Size: {{ file.size }} • Format: {{ file.file_type|upper }}
                     </div>
-                    <!-- ফাইলের আসল নামটা ছোট করে নিচে দেখানো -->
                     <div style="font-size: 0.65rem; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">
                         {{ file.filename }}
                     </div>
