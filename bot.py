@@ -196,11 +196,9 @@ def telegram_webhook():
     # ==========================================
     # 🔴 আপনার চ্যানেলের লিংক এখানে বসান
     # ==========================================
-    MY_CHANNEL_LINK = "https://t.me/TGLinkBase" 
-    # ☝️ উপরের ডাবল কোটেশনের ভেতরে আপনার লিংক দিন
+    MY_CHANNEL_LINK = "https://t.me/MovieZone_Official" 
     # ==========================================
 
-    # --- CHANNEL POST HANDLING (Upload Logic) ---
     if 'channel_post' in update:
         msg = update['channel_post']
         chat_id = str(msg.get('chat', {}).get('id'))
@@ -312,20 +310,23 @@ def telegram_webhook():
             movie_id = res.inserted_id
 
         if movie_id and WEBSITE_URL:
-            dl_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
+            # সোর্স চ্যানেলের জন্য ডিরেক্ট লিংক (যাতে এডমিন চেক করতে পারে)
+            direct_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
+            # পাবলিক চ্যানেলের জন্য হোম লিংক
+            home_link = WEBSITE_URL.rstrip('/')
             
-            # সোর্স চ্যানেলের বাটন
+            # --- SOURCE CHANNEL BUTTON (Direct Link) ---
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
                 'reply_markup': json.dumps({
-                    "inline_keyboard": [[{"text": "▶️ Download from Website", "url": dl_link}]]
+                    "inline_keyboard": [[{"text": "▶️ Check on Website", "url": direct_link}]]
                 })
             }
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # পাবলিক চ্যানেলে নোটিফিকেশন + জয়েন বাটন
+            # --- PUBLIC CHANNEL NOTIFICATION (Home Link) ---
             if PUBLIC_CHANNEL_ID and should_notify:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
                 if episode_label: notify_caption += f"📌 {escape_markdown(episode_label)}\n"
@@ -335,11 +336,13 @@ def telegram_webhook():
                 notify_caption += f"🔊 Language: {language}\n"
                 notify_caption += f"💿 Quality: {quality}\n"
                 notify_caption += f"📦 Size: {file_size_mb:.2f} MB\n\n"
-                notify_caption += f"🔗 *Download Now:* [Click Here]({dl_link})"
+                # এখানে লিংকেও হোম পেজ দেওয়া হয়েছে
+                notify_caption += f"🔗 *Download Now:* [Click Here]({home_link})"
 
+                # বাটন কনফিগারেশন (হোম লিংক)
                 pub_keyboard = [
-                    [{"text": "📥 Download / Watch Online", "url": dl_link}],
-                    [{"text": "📢 Join Our Channel", "url": MY_CHANNEL_LINK}] # <--- এখানেও বাটন থাকবে
+                    [{"text": "📥 Download / Watch Online", "url": home_link}], # <--- হোম পেজের লিংক
+                    [{"text": "📢 Join Our Channel", "url": MY_CHANNEL_LINK}]
                 ]
 
                 notify_payload = {
@@ -360,7 +363,7 @@ def telegram_webhook():
 
         return jsonify({'status': 'success'})
 
-    # --- USER MESSAGE HANDLING (/start code) ---
+    # --- USER MESSAGE HANDLING ---
     elif 'message' in update:
         msg = update['message']
         chat_id = msg.get('chat', {}).get('id')
@@ -382,9 +385,6 @@ def telegram_webhook():
                         caption += f"📦 Size: {target_file['size']}\n\n"
                         caption += f"✅ *Downloaded from {escape_markdown(WEBSITE_URL)}*"
                         
-                        # ===================================================
-                        # 🔥 এইখানে আপনার চ্যানেলের বাটন সেট করা হচ্ছে 🔥
-                        # ===================================================
                         file_keyboard = {
                             "inline_keyboard": [
                                 [{"text": "📢 Join Update Channel", "url": MY_CHANNEL_LINK}]
@@ -395,7 +395,7 @@ def telegram_webhook():
                             'chat_id': chat_id, 
                             'caption': caption, 
                             'parse_mode': 'Markdown',
-                            'reply_markup': json.dumps(file_keyboard) # <--- বাটন যুক্ত করা হলো
+                            'reply_markup': json.dumps(file_keyboard)
                         }
                         
                         method = 'sendVideo' if target_file['file_type'] == 'video' else 'sendDocument'
@@ -408,7 +408,6 @@ def telegram_webhook():
                 else:
                     requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={'chat_id': chat_id, 'text': "❌ Invalid Link."})
             else:
-                # কেউ শুধু /start দিলে তাকেও জয়েন করতে বলা হবে
                 welcome_kb = {
                     "inline_keyboard": [[{"text": "📢 Join Our Channel", "url": MY_CHANNEL_LINK}]]
                 }
