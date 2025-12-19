@@ -22,8 +22,8 @@ MONGO_URI = os.getenv("MONGO_URI")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BOT_USERNAME = os.getenv("BOT_USERNAME")
-PUBLIC_CHANNEL_ID = os.getenv("PUBLIC_CHANNEL_ID") # আপনার মেইন চ্যানেল যেখানে পোস্ট যাবে
-SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID") # যেখানে ফাইল আপলোড করবেন
+PUBLIC_CHANNEL_ID = os.getenv("PUBLIC_CHANNEL_ID")
+SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID")
 WEBSITE_URL = os.getenv("WEBSITE_URL")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
@@ -61,6 +61,25 @@ def get_file_quality(filename):
     if "720p" in filename: return "720p HD"
     if "480p" in filename: return "480p SD"
     return "HD"
+
+# --- নতুন ফাংশন: এপিসোড বা সিজন ডিটেকশন ---
+def get_episode_label(filename):
+    # S01E05 বা s1e5 প্যাটার্ন খোঁজা
+    match_se = re.search(r'\bS(\d+)\s*E(\d+)\b', filename, re.IGNORECASE)
+    if match_se:
+        return f"S{int(match_se.group(1)):02d} E{int(match_se.group(2)):02d}"
+    
+    # শুধু Episode বা Ep খোঁজা
+    match_ep = re.search(r'\b(Episode|Ep|E)\s*(\d+)\b', filename, re.IGNORECASE)
+    if match_ep:
+        return f"Episode {int(match_ep.group(2))}"
+    
+    # শুধু Season খোঁজা
+    match_s = re.search(r'\bSeason\s*(\d+)\b', filename, re.IGNORECASE)
+    if match_s:
+        return f"Season {int(match_s.group(1))}"
+        
+    return None
 
 def get_tmdb_details(title, content_type="movie"):
     if not TMDB_API_KEY: return {"title": title}
@@ -106,7 +125,7 @@ def inject_globals():
         site_name="MovieZone"
     )
 
-# === TELEGRAM WEBHOOK (UPDATED WITH NOTIFICATION) ===
+# === TELEGRAM WEBHOOK ===
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
     update = request.get_json()
@@ -151,6 +170,16 @@ def telegram_webhook():
         tmdb_data = get_tmdb_details(search_title, content_type)
         final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
+        
+        # --- নতুন আপডেট: এপিসোড ডিটেকশন ---
+        episode_label = get_episode_label(file_name)
+        if content_type == "series" and not episode_label:
+            # যদি প্যাটার্ন না পাওয়া যায়, ফাইলের নাম থেকে টাইটেল বাদ দিয়ে বাকিটা রাখার চেষ্টা
+            clean_part = file_name.replace(search_title, "").replace(".", " ").strip()
+            # শুধু প্রথম ২০ অক্ষর নেওয়া যাতে খুব বড় না হয়
+            if len(clean_part) > 3:
+                episode_label = clean_part[:20]
+
         unique_code = str(uuid.uuid4())[:8]
 
         language = "Unknown"
@@ -166,6 +195,7 @@ def telegram_webhook():
             "unique_code": unique_code,
             "filename": file_name,
             "quality": quality,
+            "episode_label": episode_label, # ডেটাবেসে এপিসোড ইনফো সেভ
             "size": f"{file_size_mb:.2f} MB",
             "file_type": file_type,
             "added_at": datetime.utcnow()
@@ -214,10 +244,12 @@ def telegram_webhook():
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # 2. PUBLIC CHANNEL NOTIFICATION (NEW FEATURE)
+            # 2. PUBLIC CHANNEL NOTIFICATION
             if PUBLIC_CHANNEL_ID:
-                notify_caption = f"🎬 *{escape_markdown(final_title)}*\n\n"
-                notify_caption += f"⭐ Rating: {tmdb_data.get('vote_average', 'N/A')}\n"
+                notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
+                if episode_label:
+                    notify_caption += f"📌 {escape_markdown(episode_label)}\n"
+                notify_caption += f"\n⭐ Rating: {tmdb_data.get('vote_average', 'N/A')}\n"
                 notify_caption += f"📅 Year: {(tmdb_data.get('release_date') or 'N/A')[:4]}\n"
                 notify_caption += f"🔊 Language: {language}\n"
                 notify_caption += f"💿 Quality: {quality}\n"
@@ -234,7 +266,6 @@ def telegram_webhook():
                     })
                 }
 
-                # Send Photo if available, else Message
                 if tmdb_data.get('poster'):
                     notify_payload['photo'] = tmdb_data.get('poster')
                     notify_payload['caption'] = notify_caption
@@ -261,6 +292,8 @@ def telegram_webhook():
                     target_file = next((f for f in movie['files'] if f['unique_code'] == code), None)
                     if target_file:
                         caption = f"🎬 *{escape_markdown(movie['title'])}*\n"
+                        if target_file.get('episode_label'):
+                            caption += f"📌 {escape_markdown(target_file['episode_label'])}\n"
                         caption += f"🔊 Audio: {movie.get('language', 'N/A')}\n"
                         caption += f"💿 Quality: {target_file['quality']}\n"
                         caption += f"📦 Size: {target_file['size']}\n\n"
@@ -400,6 +433,7 @@ index_template = """
 </html>
 """
 
+# --- ডিটেইলস পেজ আপডেট (এপিসোড দেখানোর জন্য) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -430,7 +464,6 @@ detail_template = """
         .file-section { background: var(--bg-sec); border-radius: 8px; padding: 15px; border: 1px solid #2a2a2a; }
         .section-head { font-size: 1rem; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: var(--primary); font-weight: 600; border-bottom: 1px solid #333; padding-bottom: 10px; }
         
-        /* Updated Button Styles */
         .file-item { display: flex; flex-direction: column; align-items: center; background: #252525; padding: 15px; border-radius: 8px; margin-bottom: 12px; text-align: center; }
         .file-details h4 { font-size: 1rem; margin-bottom: 4px; color: #fff; }
         .file-details span { font-size: 0.8rem; color: #999; }
@@ -438,7 +471,7 @@ detail_template = """
         .btn-dl { 
             background: #0088cc; 
             color: white; 
-            width: 100%; /* Full width */
+            width: 100%;
             padding: 10px; 
             margin-top: 10px; 
             border-radius: 6px; 
@@ -496,11 +529,28 @@ detail_template = """
             {% for file in movie.files|reverse %}
             <div class="file-item">
                 <div class="file-details">
-                    <h4>{{ file.quality }}</h4>
-                    <span>Size: {{ file.size }} • Format: {{ file.file_type|upper }}</span>
+                    {% if file.episode_label %}
+                        <h4 style="color: #ffb400; font-weight: 700;">{{ file.episode_label }}</h4>
+                        <span style="color: #fff;">{{ file.quality }}</span>
+                    {% else %}
+                        <h4>{{ file.quality }}</h4>
+                    {% endif %}
+                    
+                    <div style="font-size: 0.75rem; color: #888; margin-top: 3px;">
+                        Size: {{ file.size }} • Format: {{ file.file_type|upper }}
+                    </div>
+                    <div style="font-size: 0.65rem; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">
+                        {{ file.filename }}
+                    </div>
                 </div>
+                
                 <a href="https://t.me/{{ BOT_USERNAME }}?start={{ file.unique_code }}" class="btn-dl">
-                    <i class="fab fa-telegram-plane"></i> Get File
+                    <i class="fab fa-telegram-plane"></i> 
+                    {% if file.episode_label %}
+                        Watch {{ file.episode_label }}
+                    {% else %}
+                        Get File
+                    {% endif %}
                 </a>
             </div>
             {% endfor %}
@@ -521,7 +571,7 @@ detail_template = """
 """
 
 # ================================
-#        ADMIN PANEL TEMPLATES (FIXED)
+#        ADMIN PANEL TEMPLATES
 # ================================
 
 admin_base = """
@@ -803,7 +853,7 @@ def movie_detail(movie_id):
         return "Invalid ID", 400
 
 # ================================
-#        ADMIN ROUTES (FIXED)
+#        ADMIN ROUTES
 # ================================
 
 @app.route('/admin')
@@ -820,7 +870,6 @@ def admin_home():
     
     movie_list = list(movies.find(filter_q).sort('_id', -1).skip((page-1)*per_page).limit(per_page))
     
-    # Fix: Manually combine base + dashboard strings
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_dashboard)
     return render_template_string(full_html, movies=movie_list, page=page, q=q, active='dashboard')
 
@@ -845,7 +894,6 @@ def admin_edit_movie(movie_id):
         
     movie = movies.find_one({"_id": ObjectId(movie_id)})
     
-    # Fix: Manually combine base + edit strings
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_edit)
     return render_template_string(full_html, movie=movie, active='dashboard')
 
@@ -868,7 +916,6 @@ def admin_settings_page():
     
     curr_settings = settings.find_one() or {}
     
-    # Fix: Manually combine base + settings strings
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_settings)
     return render_template_string(full_html, settings=curr_settings, active='settings')
 
