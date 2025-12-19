@@ -397,181 +397,103 @@ index_template = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ site_name }} - Home</title>
+    <!-- CSS & Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Swiper CSS (For Slider) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap'); /* For Bangla Text */
+        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap');
         
-        :root { --primary: #E50914; --dark: #0f1012; --card-bg: #1a1a1a; --text: #fff; --red-btn: #cc0000; }
+        :root { --primary: #E50914; --dark: #0f1012; --card-bg: #1a1a1a; --text: #fff; --red-btn: #cc0000; --blue-badge: #0084ff; }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; -webkit-tap-highlight-color: transparent; }
         body { background-color: var(--dark); color: var(--text); padding-bottom: 70px; }
         a { text-decoration: none; color: inherit; }
         
         /* NAVBAR */
-        .navbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #161616; border-bottom: 1px solid #222; }
+        .navbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #161616; border-bottom: 1px solid #222; position: sticky; top: 0; z-index: 100; }
         .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
         .nav-icons { color: #fff; font-size: 18px; }
 
-        /* CATEGORY GRID (RED BUTTONS) */
-        .category-container {
-            padding: 15px 10px;
-            background: #121212;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 8px;
-        }
+        /* CATEGORY BUTTONS */
+        .category-container { padding: 10px; background: #121212; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+        .cat-btn { background: var(--red-btn); color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #990000; box-shadow: 0 3px 0 #800000; transition: 0.1s; white-space: nowrap; }
+        .cat-btn:active { transform: translateY(3px); box-shadow: none; }
+        .cat-btn.active { background: #ffcc00; color: #000; border-color: #cc9900; box-shadow: 0 3px 0 #997700; }
 
-        .cat-btn {
-            background: var(--red-btn);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 700;
-            text-transform: uppercase;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            border: 1px solid #990000;
-            box-shadow: 0 3px 0 #800000; /* 3D Effect */
-            transition: transform 0.1s, box-shadow 0.1s;
-            white-space: nowrap;
-        }
+        /* SEARCH BAR */
+        .search-wrapper { padding: 5px 15px 15px 15px; background: #121212; display: flex; justify-content: center; }
+        .big-search-box { width: 100%; max-width: 600px; display: flex; background: #1e252b; border: 2px solid #00c3ff; border-radius: 8px; overflow: hidden; }
+        .big-search-box input { flex: 1; background: transparent; border: none; padding: 10px 15px; color: #fff; font-family: 'Hind Siliguri', sans-serif; font-size: 15px; outline: none; }
+        .big-search-box button { background: #00c3ff; border: none; width: 50px; cursor: pointer; color: #fff; font-size: 18px; }
 
-        .cat-btn:active {
-            transform: translateY(3px);
-            box-shadow: none;
-        }
+        /* === HERO SLIDER STYLES === */
+        .slider-section { padding: 10px 15px; margin-bottom: 10px; }
+        .swiper { width: 100%; height: 200px; border-radius: 8px; overflow: hidden; }
+        @media (min-width: 600px) { .swiper { height: 320px; } }
         
-        .cat-btn.active {
-            background: #ffcc00;
-            color: #000;
-            border-color: #cc9900;
-            box-shadow: 0 3px 0 #997700;
-        }
-
-        .cat-btn i, .cat-btn span.emoji { font-size: 14px; }
-
-        /* BIG SEARCH BAR (Like Image) */
-        .search-wrapper {
-            padding: 5px 15px 20px 15px;
-            background: #121212;
-            display: flex;
-            justify-content: center;
-        }
-        .big-search-box {
-            width: 100%;
-            max-width: 600px;
-            display: flex;
-            background: #1e252b;
-            border: 2px solid #00c3ff;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 0 10px rgba(0, 195, 255, 0.2);
-        }
-        .big-search-box input {
-            flex: 1;
-            background: transparent;
-            border: none;
-            padding: 12px 15px;
-            color: #fff;
-            font-family: 'Hind Siliguri', sans-serif;
-            font-size: 16px;
-            outline: none;
-        }
-        .big-search-box button {
-            background: #00c3ff;
-            border: none;
-            width: 55px;
-            cursor: pointer;
-            color: #fff;
-            font-size: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* HERO & CONTENT */
-        .hero { height: 280px; background-size: cover; background-position: center; position: relative; display: flex; align-items: flex-end; margin-bottom: 20px; margin-top: 10px;}
-        .hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, var(--dark) 0%, transparent 100%); }
-        .hero-content { position: relative; z-index: 2; padding: 20px; width: 100%; }
-        .hero-title { font-size: 1.8rem; line-height: 1.2; text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 5px; }
-        .btn-play { background: var(--primary); border: none; padding: 8px 20px; border-radius: 4px; color: #fff; font-weight: 600; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; }
-
+        .swiper-slide { position: relative; background: #000; display: flex; align-items: flex-end; }
+        .slide-img { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
+        
+        /* Gradient Overlay like Image */
+        .slide-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.6) 40%, transparent 100%); pointer-events: none; }
+        
+        .slide-content { position: absolute; bottom: 0; left: 0; width: 100%; padding: 15px; z-index: 10; padding-right: 90px; /* Space for Blue Badge */ }
+        .slide-title { font-size: 1.4rem; font-weight: 700; line-height: 1.2; text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; font-family: 'Oswald', sans-serif; }
+        .slide-meta { font-size: 0.9rem; color: #ccc; font-weight: 500; }
+        
+        /* Blue MOVIE/SERIES Badge */
+        .type-badge { position: absolute; bottom: 0; right: 0; background: var(--blue-badge); color: #fff; padding: 6px 15px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; border-top-left-radius: 8px; z-index: 20; }
+        
+        /* Pagination Dots */
+        .swiper-pagination-bullet { background: #888; opacity: 1; width: 8px; height: 8px; }
+        .swiper-pagination-bullet-active { background: #fff; width: 20px; border-radius: 4px; }
+        
+        /* CONTENT GRID */
         .section { padding: 0 15px; }
-        .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; border-left: 4px solid var(--primary); padding-left: 10px; }
-        .section-title { font-size: 1.2rem; font-weight: 700; text-transform: uppercase; }
+        .section-header { margin-bottom: 15px; border-left: 4px solid var(--primary); padding-left: 10px; }
+        .section-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; }
 
         .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
         @media (min-width: 600px) { .grid { grid-template-columns: repeat(3, 1fr); gap: 15px; } }
         @media (min-width: 900px) { .grid { grid-template-columns: repeat(5, 1fr); gap: 20px; } }
 
         .card { position: relative; background: var(--card-bg); border-radius: 6px; overflow: hidden; aspect-ratio: 2/3; transition: transform 0.2s; }
-        .card:hover { transform: scale(1.03); z-index: 10; }
         .card-img { width: 100%; height: 100%; object-fit: cover; }
         .card-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, transparent 60%); display: flex; flex-direction: column; justify-content: flex-end; padding: 10px; }
-        .card-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
-        .card-meta { font-size: 0.75rem; color: #ccc; margin-top: 2px; display: flex; justify-content: space-between; }
-        
-        .rating-badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.7); color: #ffb400; padding: 2px 5px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; backdrop-filter: blur(4px); }
-        .lang-badge { position: absolute; top: 6px; right: 6px; background: var(--primary); color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .card-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .card-meta { font-size: 0.75rem; color: #ccc; display: flex; justify-content: space-between; }
+        .rating-badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.7); color: #ffb400; padding: 2px 5px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; }
 
         .pagination { display: flex; justify-content: center; gap: 10px; margin: 30px 0; }
-        .page-btn { padding: 8px 16px; background: #222; border-radius: 4px; color: #fff; font-size: 0.9rem; border: 1px solid #333; transition: 0.2s; }
-        .page-btn:hover { background: #333; }
+        .page-btn { padding: 8px 16px; background: #222; border-radius: 4px; color: #fff; font-size: 0.9rem; border: 1px solid #333; }
 
-        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: #161616; display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #252525; z-index: 99; backdrop-filter: blur(10px); }
-        .nav-item { display: flex; flex-direction: column; align-items: center; color: #777; font-size: 10px; transition: 0.2s; }
-        .nav-item i { font-size: 18px; margin-bottom: 4px; }
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: #161616; display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #252525; z-index: 99; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; color: #777; font-size: 10px; }
         .nav-item.active { color: var(--primary); }
         
-        .ad-container { margin: 15px 0; text-align: center; min-height: 50px; background: #111; border-radius: 4px; overflow: hidden; }
+        .ad-container { margin: 15px 0; text-align: center; overflow: hidden; }
     </style>
 </head>
 <body>
 
 <nav class="navbar">
     <a href="/" class="logo">{{ site_name }}</a>
-    <div class="nav-icons">
-        <i class="fas fa-bell"></i>
-    </div>
+    <div class="nav-icons"><i class="fas fa-bell"></i></div>
 </nav>
 
-<!-- RED CATEGORY BUTTONS GRID -->
 <div class="category-container">
-    <a href="/" class="cat-btn {{ 'active' if not selected_cat and not request.args.get('type') else '' }}">
-        <span class="emoji">🏠</span> Home
-    </a>
-    
-    <!-- Static Categories like Image -->
-    <a href="/movies" class="cat-btn {{ 'active' if request.args.get('type') == 'movie' else '' }}">
-        <i class="fas fa-film"></i> All Movies
-    </a>
-    <a href="/series" class="cat-btn {{ 'active' if request.args.get('type') == 'series' else '' }}">
-        <i class="fas fa-tv"></i> All Web Series
-    </a>
-
-    <!-- Dynamic Categories from DB -->
+    <a href="/" class="cat-btn {{ 'active' if not selected_cat and not request.args.get('type') else '' }}">🏠 Home</a>
+    <a href="/movies" class="cat-btn {{ 'active' if request.args.get('type') == 'movie' else '' }}"><i class="fas fa-film"></i> Movies</a>
+    <a href="/series" class="cat-btn {{ 'active' if request.args.get('type') == 'series' else '' }}"><i class="fas fa-tv"></i> Series</a>
     {% for cat in categories %}
     <a href="/?cat={{ cat.name }}" class="cat-btn {{ 'active' if selected_cat == cat.name else '' }}">
-        <!-- Simple logic to assign icons based on name -->
-        {% if 'Bangla' in cat.name %}<span class="emoji">🇧🇩</span>
-        {% elif 'Hindi' in cat.name %}<span class="emoji">🇮🇳</span>
-        {% elif 'English' in cat.name %}<span class="emoji">🇺🇸</span>
-        {% elif 'Korean' in cat.name %}<span class="emoji">🇰🇷</span>
-        {% elif 'Dual' in cat.name %}<span class="emoji">🎧</span>
-        {% elif 'Action' in cat.name %}<span class="emoji">⚔️</span>
-        {% elif 'Horror' in cat.name %}<span class="emoji">👻</span>
-        {% elif 'Love' in cat.name or 'Romance' in cat.name %}<span class="emoji">💘</span>
-        {% elif 'Thriller' in cat.name %}<span class="emoji">🧩</span>
-        {% else %}<i class="fas fa-tag"></i>{% endif %}
-        {{ cat.name }}
+        {% if 'Bangla' in cat.name %}🇧🇩{% elif 'Hindi' in cat.name %}🇮🇳{% elif 'English' in cat.name %}🇺🇸{% else %}<i class="fas fa-tag"></i>{% endif %} {{ cat.name }}
     </a>
     {% endfor %}
 </div>
 
-<!-- BIG SEARCH BAR -->
 <div class="search-wrapper">
     <form action="/" method="GET" class="big-search-box">
         <input type="text" name="q" placeholder="সার্চ করে খুঁজে নিন পছন্দের মুভি..." value="{{ query }}">
@@ -579,16 +501,29 @@ index_template = """
     </form>
 </div>
 
-{% if not query and not selected_cat and featured %}
-<div class="hero" style="background-image: url('{{ featured.backdrop or featured.poster }}');">
-    <div class="hero-content">
-        <h1 class="hero-title">{{ featured.title }}</h1>
-        <div style="font-size: 0.8rem; color: #ddd; margin-bottom: 5px;">
-            <i class="fas fa-star" style="color: #ffb400;"></i> {{ featured.vote_average }} | {{ featured.category or 'Movie' }}
+<!-- HERO SLIDER (Shown only on Home) -->
+{% if slider_movies %}
+<div class="slider-section">
+    <div class="swiper mySwiper">
+        <div class="swiper-wrapper">
+            {% for slide in slider_movies %}
+            <div class="swiper-slide">
+                <a href="{{ url_for('movie_detail', movie_id=slide._id) }}" style="width:100%; height:100%; position:relative;">
+                    <img src="{{ slide.backdrop or slide.poster }}" class="slide-img" alt="{{ slide.title }}">
+                    <div class="slide-overlay"></div>
+                    <div class="slide-content">
+                        <h2 class="slide-title">{{ slide.title }}</h2>
+                        <div class="slide-meta">
+                            {{ (slide.release_date or 'N/A')[:4] }} • {{ slide.language or 'Dual Audio' }}
+                        </div>
+                    </div>
+                    <!-- Blue Badge like image -->
+                    <div class="type-badge">{{ slide.type|upper if slide.type else 'MOVIE' }}</div>
+                </a>
+            </div>
+            {% endfor %}
         </div>
-        <a href="{{ url_for('movie_detail', movie_id=featured._id) }}" class="btn-play">
-            <i class="fas fa-play"></i> Watch Now
-        </a>
+        <div class="swiper-pagination"></div>
     </div>
 </div>
 {% endif %}
@@ -604,12 +539,11 @@ index_template = """
         {% for movie in movies %}
         <a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="card">
             <span class="rating-badge">{{ movie.vote_average }}</span>
-            {% if movie.language %}<span class="lang-badge">{{ movie.language[:3] }}</span>{% endif %}
-            <img src="{{ movie.poster or 'https://via.placeholder.com/300x450?text=No+Poster' }}" class="card-img" loading="lazy">
+            <img src="{{ movie.poster or 'https://via.placeholder.com/300x450' }}" class="card-img" loading="lazy">
             <div class="card-overlay">
                 <h3 class="card-title">{{ movie.title }}</h3>
                 <div class="card-meta">
-                    <span>{{ (movie.release_date or 'N/A')[:4] }}</span>
+                    <span>{{ (movie.release_date or '')[:4] }}</span>
                     <span>{{ movie.category or 'Movie' }}</span>
                 </div>
             </div>
@@ -617,13 +551,12 @@ index_template = """
         {% endfor %}
     </div>
 
-    <!-- PAGINATION -->
     <div class="pagination">
         {% if page > 1 %}
-        <a href="/?page={{ page-1 }}&cat={{ selected_cat or '' }}&q={{ query or '' }}" class="page-btn">Previous</a>
+        <a href="/?page={{ page-1 }}" class="page-btn">Previous</a>
         {% endif %}
         {% if has_next %}
-        <a href="/?page={{ page+1 }}&cat={{ selected_cat or '' }}&q={{ query or '' }}" class="page-btn">Next</a>
+        <a href="/?page={{ page+1 }}" class="page-btn">Next</a>
         {% endif %}
     </div>
     
@@ -637,6 +570,25 @@ index_template = """
 </nav>
 
 {% if ad_settings.popunder %}{{ ad_settings.popunder|safe }}{% endif %}
+
+<!-- Swiper JS Script -->
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+<script>
+    var swiper = new Swiper(".mySwiper", {
+        spaceBetween: 15,
+        centeredSlides: true,
+        autoplay: {
+            delay: 3500,
+            disableOnInteraction: false,
+        },
+        pagination: {
+            el: ".swiper-pagination",
+            clickable: true,
+            dynamicBullets: true,
+        },
+        loop: true
+    });
+</script>
 
 </body>
 </html>
@@ -1111,7 +1063,7 @@ admin_settings = """
 @app.route('/')
 def home():
     page = int(request.args.get('page', 1))
-    per_page = 16 # পেজ প্রতি ১৬টি মুভি দেখাবে
+    per_page = 16 
     query = request.args.get('q', '').strip()
     cat_filter = request.args.get('cat', '').strip()
     type_filter = request.args.get('type', '').strip()
@@ -1124,23 +1076,20 @@ def home():
     if type_filter:
         db_query["type"] = type_filter
 
-    # মোট মুভির সংখ্যা (পেজিনেশনের জন্য)
+    # মোট মুভি এবং পেজিনেশন
     total_movies = movies.count_documents(db_query)
-    
-    # স্কিপ এবং লিমিট ব্যবহার করে নির্দিষ্ট পেজের মুভি আনা
     movie_list = list(movies.find(db_query).sort([('updated_at', -1), ('_id', -1)]).skip((page-1)*per_page).limit(per_page))
-    
-    # সব ক্যাটাগরি আনা (ন্যাভিগেশনের জন্য)
     cat_list = list(categories.find())
     
-    featured = None
-    if not query and not cat_filter and not type_filter and movie_list:
-        featured = movies.find_one(sort=[('vote_average', -1)]) # সর্বোচ্চ রেটিং মুভি ফিচারড হবে
+    # --- SLIDER LOGIC (New) ---
+    # স্লাইডারের জন্য লেটেস্ট ৫টি মুভি নেওয়া হচ্ছে যাদের ব্যাকড্রপ ইমেজ আছে
+    slider_movies = []
+    if not query and not cat_filter:
+        slider_movies = list(movies.find({"backdrop": {"$ne": None}}).sort([('created_at', -1)]).limit(5))
 
     has_next = (page * per_page) < total_movies
 
-    return render_template_string(index_template, movies=movie_list, categories=cat_list, selected_cat=cat_filter, query=query, featured=featured, page=page, has_next=has_next)
-
+    return render_template_string(index_template, movies=movie_list, categories=cat_list, selected_cat=cat_filter, query=query, slider_movies=slider_movies, page=page, has_next=has_next)
 @app.route('/movies')
 def view_movies():
     return redirect(url_for('home', type='movie'))
