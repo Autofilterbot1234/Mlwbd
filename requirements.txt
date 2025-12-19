@@ -1,7 +1,5 @@
-Flask
-requests
+flask
 pymongo
-APScheduler
-gunicorn
-beautifulsoup4
-lxml
+requests
+python-dotenv
+dnspython
