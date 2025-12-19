@@ -942,7 +942,7 @@ admin_categories = """
 admin_edit = """
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>Edit Movie: <span class="text-primary">{{ movie.title }}</span></h3>
+        <h3>Edit Content: <span class="text-primary">{{ movie.title }}</span></h3>
         <a href="/admin" class="btn btn-secondary btn-sm">Back</a>
     </div>
 
@@ -952,7 +952,7 @@ admin_edit = """
             <div class="card p-3">
                 <h5>Fetch Data from TMDB</h5>
                 <div class="input-group mb-3">
-                    <input type="text" id="tmdbQuery" class="form-control" placeholder="Enter Movie Name..." value="{{ movie.title }}">
+                    <input type="text" id="tmdbQuery" class="form-control" placeholder="Enter Name..." value="{{ movie.title }}">
                     <button class="btn btn-warning" type="button" onclick="searchTMDB()">Search</button>
                 </div>
                 <div id="tmdbResults" style="max-height: 400px; overflow-y: auto;"></div>
@@ -969,17 +969,30 @@ admin_edit = """
             <div class="card p-4">
                 <form method="POST">
                     <div class="row">
-                        <div class="col-md-8 mb-3">
-                            <label class="form-label">Movie Title</label>
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label">Title</label>
                             <input type="text" name="title" class="form-control" value="{{ movie.title }}" required>
                         </div>
-                        <div class="col-md-4 mb-3">
+                    </div>
+
+                    <div class="row">
+                        <!-- CATEGORY SELECT -->
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Category</label>
                             <select name="category" class="form-select">
                                 <option value="Uncategorized">Select Category...</option>
                                 {% for cat in categories %}
                                 <option value="{{ cat.name }}" {{ 'selected' if movie.category == cat.name else '' }}>{{ cat.name }}</option>
                                 {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- TYPE SELECT (ADDED THIS) -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Content Type</label>
+                            <select name="type" class="form-select" style="background-color: #2c3036; color: white; border-color: #444;">
+                                <option value="movie" {{ 'selected' if movie.type == 'movie' else '' }}>Movie</option>
+                                <option value="series" {{ 'selected' if movie.type == 'series' else '' }}>Web Series</option>
                             </select>
                         </div>
                     </div>
@@ -1015,7 +1028,7 @@ admin_edit = """
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100">Update Movie Details</button>
+                    <button type="submit" class="btn btn-primary btn-lg w-100">Update Details</button>
                 </form>
             </div>
         </div>
