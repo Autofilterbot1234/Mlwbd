@@ -5,7 +5,7 @@ import requests
 import json
 import uuid
 import math
-from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify, flash
+from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
@@ -22,12 +22,12 @@ MONGO_URI = os.getenv("MONGO_URI")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BOT_USERNAME = os.getenv("BOT_USERNAME")
-PUBLIC_CHANNEL_ID = os.getenv("PUBLIC_CHANNEL_ID")
-SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID")
+PUBLIC_CHANNEL_ID = os.getenv("PUBLIC_CHANNEL_ID") # আপনার মেইন চ্যানেল যেখানে পোস্ট যাবে
+SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID") # যেখানে ফাইল আপলোড করবেন
 WEBSITE_URL = os.getenv("WEBSITE_URL")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# এডমিন ক্রেডেনশিয়াল (এনভায়রনমেন্ট ভেরিয়েবল না থাকলে ডিফল্ট 'admin')
+# এডমিন ক্রেডেনশিয়াল
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
 
@@ -106,7 +106,7 @@ def inject_globals():
         site_name="MovieZone"
     )
 
-# === TELEGRAM WEBHOOK ===
+# === TELEGRAM WEBHOOK (UPDATED WITH NOTIFICATION) ===
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
     update = request.get_json()
@@ -115,6 +115,8 @@ def telegram_webhook():
     if 'channel_post' in update:
         msg = update['channel_post']
         chat_id = str(msg.get('chat', {}).get('id'))
+        
+        # শুধুমাত্র সোর্স চ্যানেল থেকে রিসিভ করবে
         if SOURCE_CHANNEL_ID and chat_id != str(SOURCE_CHANNEL_ID):
             return jsonify({'status': 'wrong_channel'})
 
@@ -170,6 +172,7 @@ def telegram_webhook():
         }
 
         existing_movie = movies.find_one({"title": final_title})
+        movie_id = None
 
         if existing_movie:
             movies.update_one(
@@ -194,8 +197,11 @@ def telegram_webhook():
             res = movies.insert_one(new_movie)
             movie_id = res.inserted_id
 
+        # --- Notification & Button Logic ---
         if movie_id and WEBSITE_URL:
             dl_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
+            
+            # 1. Source Channel Edit (Add Button)
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
@@ -207,6 +213,37 @@ def telegram_webhook():
             }
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
+
+            # 2. PUBLIC CHANNEL NOTIFICATION (NEW FEATURE)
+            if PUBLIC_CHANNEL_ID:
+                notify_caption = f"🎬 *{escape_markdown(final_title)}*\n\n"
+                notify_caption += f"⭐ Rating: {tmdb_data.get('vote_average', 'N/A')}\n"
+                notify_caption += f"📅 Year: {(tmdb_data.get('release_date') or 'N/A')[:4]}\n"
+                notify_caption += f"🔊 Language: {language}\n"
+                notify_caption += f"💿 Quality: {quality}\n"
+                notify_caption += f"📦 Size: {file_size_mb:.2f} MB\n\n"
+                notify_caption += f"🔗 *Download Now:* [Click Here]({dl_link})"
+
+                notify_payload = {
+                    'chat_id': PUBLIC_CHANNEL_ID,
+                    'parse_mode': 'Markdown',
+                    'reply_markup': json.dumps({
+                        "inline_keyboard": [[
+                            {"text": "📥 Download / Watch Online", "url": dl_link}
+                        ]]
+                    })
+                }
+
+                # Send Photo if available, else Message
+                if tmdb_data.get('poster'):
+                    notify_payload['photo'] = tmdb_data.get('poster')
+                    notify_payload['caption'] = notify_caption
+                    try: requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
+                    except Exception as e: print(f"Notify Error: {e}")
+                else:
+                    notify_payload['text'] = notify_caption
+                    try: requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=notify_payload)
+                    except Exception as e: print(f"Notify Error: {e}")
 
         return jsonify({'status': 'success'})
 
