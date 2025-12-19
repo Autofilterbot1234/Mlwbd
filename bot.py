@@ -62,19 +62,15 @@ def get_file_quality(filename):
     if "480p" in filename: return "480p SD"
     return "HD"
 
-# --- নতুন ফাংশন: এপিসোড বা সিজন ডিটেকশন ---
 def get_episode_label(filename):
-    # S01E05 বা s1e5 প্যাটার্ন খোঁজা
     match_se = re.search(r'\bS(\d+)\s*E(\d+)\b', filename, re.IGNORECASE)
     if match_se:
         return f"S{int(match_se.group(1)):02d} E{int(match_se.group(2)):02d}"
     
-    # শুধু Episode বা Ep খোঁজা
     match_ep = re.search(r'\b(Episode|Ep|E)\s*(\d+)\b', filename, re.IGNORECASE)
     if match_ep:
         return f"Episode {int(match_ep.group(2))}"
     
-    # শুধু Season খোঁজা
     match_s = re.search(r'\bSeason\s*(\d+)\b', filename, re.IGNORECASE)
     if match_s:
         return f"Season {int(match_s.group(1))}"
@@ -135,7 +131,6 @@ def telegram_webhook():
         msg = update['channel_post']
         chat_id = str(msg.get('chat', {}).get('id'))
         
-        # শুধুমাত্র সোর্স চ্যানেল থেকে রিসিভ করবে
         if SOURCE_CHANNEL_ID and chat_id != str(SOURCE_CHANNEL_ID):
             return jsonify({'status': 'wrong_channel'})
 
@@ -171,12 +166,9 @@ def telegram_webhook():
         final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
         
-        # --- নতুন আপডেট: এপিসোড ডিটেকশন ---
         episode_label = get_episode_label(file_name)
         if content_type == "series" and not episode_label:
-            # যদি প্যাটার্ন না পাওয়া যায়, ফাইলের নাম থেকে টাইটেল বাদ দিয়ে বাকিটা রাখার চেষ্টা
             clean_part = file_name.replace(search_title, "").replace(".", " ").strip()
-            # শুধু প্রথম ২০ অক্ষর নেওয়া যাতে খুব বড় না হয়
             if len(clean_part) > 3:
                 episode_label = clean_part[:20]
 
@@ -195,7 +187,7 @@ def telegram_webhook():
             "unique_code": unique_code,
             "filename": file_name,
             "quality": quality,
-            "episode_label": episode_label, # ডেটাবেসে এপিসোড ইনফো সেভ
+            "episode_label": episode_label,
             "size": f"{file_size_mb:.2f} MB",
             "file_type": file_type,
             "added_at": datetime.utcnow()
@@ -203,14 +195,36 @@ def telegram_webhook():
 
         existing_movie = movies.find_one({"title": final_title})
         movie_id = None
+        should_notify = False # ডিফল্টভাবে নোটিফিকেশন বন্ধ থাকবে
 
         if existing_movie:
+            # যদি কন্টেন্ট আগেই থাকে
+            if content_type == "series" and episode_label:
+                # যদি সিরিজ হয়, চেক করবো এই এপিসোডটি আগে ছিল কিনা
+                is_duplicate = False
+                for f in existing_movie.get('files', []):
+                    if f.get('episode_label') == episode_label:
+                        is_duplicate = True
+                        break
+                
+                # যদি এপিসোডটি নতুন হয়, তবেই নোটিফিকেশন যাবে
+                if not is_duplicate:
+                    should_notify = True
+                else:
+                    should_notify = False # একই এপিসোডের অন্য কোয়ালিটি হলে নোটিফিকেশন যাবে না
+            else:
+                # মুভির ক্ষেত্রে: যদি মুভি আগে থাকে, নতুন কোয়ালিটির জন্য নোটিফিকেশন যাবে না
+                should_notify = False
+
             movies.update_one(
                 {"_id": existing_movie['_id']},
                 {"$push": {"files": file_obj}, "$set": {"updated_at": datetime.utcnow()}}
             )
             movie_id = existing_movie['_id']
         else:
+            # একদম নতুন কন্টেন্ট হলে নোটিফিকেশন যাবে
+            should_notify = True
+            
             new_movie = {
                 "title": final_title,
                 "overview": tmdb_data.get('overview'),
@@ -244,8 +258,8 @@ def telegram_webhook():
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # 2. PUBLIC CHANNEL NOTIFICATION
-            if PUBLIC_CHANNEL_ID:
+            # 2. PUBLIC CHANNEL NOTIFICATION (Only if should_notify is True)
+            if PUBLIC_CHANNEL_ID and should_notify:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
                 if episode_label:
                     notify_caption += f"📌 {escape_markdown(episode_label)}\n"
@@ -433,7 +447,6 @@ index_template = """
 </html>
 """
 
-# --- ডিটেইলস পেজ আপডেট (এপিসোড দেখানোর জন্য) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
