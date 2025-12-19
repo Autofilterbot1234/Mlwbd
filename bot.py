@@ -5,6 +5,8 @@ import requests
 import json
 import uuid
 import math
+import threading
+import time
 from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -27,6 +29,9 @@ SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID")
 WEBSITE_URL = os.getenv("WEBSITE_URL")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# অটো ডিলিট সময় (সেকেন্ডে) - ১০ মিনিট = ৬০০ সেকেন্ড
+DELETE_TIMEOUT = 600 
+
 # এডমিন ক্রেডেনশিয়াল
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
@@ -37,7 +42,7 @@ try:
     db = client["moviezone_db"]
     movies = db["movies"]
     settings = db["settings"]
-    categories = db["categories"] # নতুন ক্যাটাগরি কালেকশন
+    categories = db["categories"] 
     print("✅ MongoDB Connected Successfully!")
 except Exception as e:
     print(f"❌ MongoDB Connection Error: {e}")
@@ -109,6 +114,17 @@ def get_episode_label(filename):
     
     if season: return f"Season {int(match_s.group(2))}"
     return None
+
+# --- BACKGROUND DELETE FUNCTION ---
+def delete_message_later(chat_id, message_id, delay):
+    """ নির্দিষ্ট সময় পর মেসেজ ডিলিট করার ফাংশন """
+    time.sleep(delay)
+    try:
+        del_url = f"{TELEGRAM_API_URL}/deleteMessage"
+        requests.post(del_url, json={"chat_id": chat_id, "message_id": message_id})
+        print(f"🗑️ Auto Deleted Message {message_id} from {chat_id}")
+    except Exception as e:
+        print(f"⚠️ Failed to delete message: {e}")
 
 # --- TMDB FUNCTION ---
 def get_tmdb_details(title, content_type="movie", year=None):
@@ -336,12 +352,10 @@ def telegram_webhook():
                 notify_caption += f"🔊 Language: {language}\n"
                 notify_caption += f"💿 Quality: {quality}\n"
                 notify_caption += f"📦 Size: {file_size_mb:.2f} MB\n\n"
-                # এখানে লিংকেও হোম পেজ দেওয়া হয়েছে
                 notify_caption += f"🔗 *Download Now:* [Click Here]({home_link})"
 
-                # বাটন কনফিগারেশন (হোম লিংক)
                 pub_keyboard = [
-                    [{"text": "📥 Download / Watch Online", "url": home_link}], # <--- হোম পেজের লিংক
+                    [{"text": "📥 Download / Watch Online", "url": home_link}],
                     [{"text": "📢 Join Our Channel", "url": MY_CHANNEL_LINK}]
                 ]
 
@@ -377,13 +391,13 @@ def telegram_webhook():
                 if movie:
                     target_file = next((f for f in movie['files'] if f['unique_code'] == code), None)
                     if target_file:
+                        # ক্যাপশনে ১০ মিনিটের ওয়ার্নিং অ্যাড করা হয়েছে
                         caption = f"🎬 *{escape_markdown(movie['title'])}*\n"
                         if target_file.get('episode_label'):
                             caption += f"📌 {escape_markdown(target_file['episode_label'])}\n"
-                        caption += f"🔊 Audio: {movie.get('language', 'N/A')}\n"
                         caption += f"💿 Quality: {target_file['quality']}\n"
                         caption += f"📦 Size: {target_file['size']}\n\n"
-                        caption += f"✅ *Downloaded from {escape_markdown(WEBSITE_URL)}*"
+                        caption += f"⚠️ *File will be deleted in 10 minutes! Forward it now!*"
                         
                         file_keyboard = {
                             "inline_keyboard": [
@@ -402,9 +416,19 @@ def telegram_webhook():
                         if target_file['file_type'] == 'video': payload['video'] = target_file['file_id']
                         else: payload['document'] = target_file['file_id']
                         
-                        requests.post(f"{TELEGRAM_API_URL}/{method}", json=payload)
+                        # --- ফাইল সেন্ড এবং অটো ডিলিট প্রসেস ---
+                        try:
+                            response = requests.post(f"{TELEGRAM_API_URL}/{method}", json=payload)
+                            resp_data = response.json()
+                            
+                            if resp_data.get('ok'):
+                                sent_msg_id = resp_data['result']['message_id']
+                                # আলাদা থ্রেডে ১০ মিনিট অপেক্ষার জন্য পাঠানো হচ্ছে
+                                threading.Thread(target=delete_message_later, args=(chat_id, sent_msg_id, DELETE_TIMEOUT)).start()
+                        except Exception as e:
+                            print(f"Error sending file: {e}")
                     else:
-                        requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={'chat_id': chat_id, 'text': "❌ File expired."})
+                        requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={'chat_id': chat_id, 'text': "❌ File expired or removed."})
                 else:
                     requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={'chat_id': chat_id, 'text': "❌ Invalid Link."})
             else:
