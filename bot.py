@@ -399,7 +399,7 @@ index_template = """
     <title>{{ site_name }} - Home</title>
     <!-- CSS & Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Swiper CSS (For Slider) -->
+    <!-- Swiper CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
 
     <style>
@@ -411,46 +411,34 @@ index_template = """
         body { background-color: var(--dark); color: var(--text); padding-bottom: 70px; }
         a { text-decoration: none; color: inherit; }
         
-        /* NAVBAR */
         .navbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #161616; border-bottom: 1px solid #222; position: sticky; top: 0; z-index: 100; }
         .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
         .nav-icons { color: #fff; font-size: 18px; }
 
-        /* CATEGORY BUTTONS */
         .category-container { padding: 10px; background: #121212; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
         .cat-btn { background: var(--red-btn); color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #990000; box-shadow: 0 3px 0 #800000; transition: 0.1s; white-space: nowrap; }
         .cat-btn:active { transform: translateY(3px); box-shadow: none; }
         .cat-btn.active { background: #ffcc00; color: #000; border-color: #cc9900; box-shadow: 0 3px 0 #997700; }
 
-        /* SEARCH BAR */
         .search-wrapper { padding: 5px 15px 15px 15px; background: #121212; display: flex; justify-content: center; }
         .big-search-box { width: 100%; max-width: 600px; display: flex; background: #1e252b; border: 2px solid #00c3ff; border-radius: 8px; overflow: hidden; }
         .big-search-box input { flex: 1; background: transparent; border: none; padding: 10px 15px; color: #fff; font-family: 'Hind Siliguri', sans-serif; font-size: 15px; outline: none; }
         .big-search-box button { background: #00c3ff; border: none; width: 50px; cursor: pointer; color: #fff; font-size: 18px; }
 
-        /* === HERO SLIDER STYLES === */
+        /* HERO SLIDER */
         .slider-section { padding: 10px 15px; margin-bottom: 10px; }
         .swiper { width: 100%; height: 200px; border-radius: 8px; overflow: hidden; }
         @media (min-width: 600px) { .swiper { height: 320px; } }
-        
         .swiper-slide { position: relative; background: #000; display: flex; align-items: flex-end; }
         .slide-img { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; }
-        
-        /* Gradient Overlay like Image */
         .slide-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.6) 40%, transparent 100%); pointer-events: none; }
-        
-        .slide-content { position: absolute; bottom: 0; left: 0; width: 100%; padding: 15px; z-index: 10; padding-right: 90px; /* Space for Blue Badge */ }
-        .slide-title { font-size: 1.4rem; font-weight: 700; line-height: 1.2; text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; font-family: 'Oswald', sans-serif; }
+        .slide-content { position: absolute; bottom: 0; left: 0; width: 100%; padding: 15px; z-index: 10; padding-right: 90px; }
+        .slide-title { font-size: 1.4rem; font-weight: 700; line-height: 1.2; text-shadow: 0 2px 4px rgba(0,0,0,0.8); margin-bottom: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
         .slide-meta { font-size: 0.9rem; color: #ccc; font-weight: 500; }
-        
-        /* Blue MOVIE/SERIES Badge */
         .type-badge { position: absolute; bottom: 0; right: 0; background: var(--blue-badge); color: #fff; padding: 6px 15px; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; border-top-left-radius: 8px; z-index: 20; }
-        
-        /* Pagination Dots */
         .swiper-pagination-bullet { background: #888; opacity: 1; width: 8px; height: 8px; }
         .swiper-pagination-bullet-active { background: #fff; width: 20px; border-radius: 4px; }
-        
-        /* CONTENT GRID */
+
         .section { padding: 0 15px; }
         .section-header { margin-bottom: 15px; border-left: 4px solid var(--primary); padding-left: 10px; }
         .section-title { font-size: 1.1rem; font-weight: 700; text-transform: uppercase; }
@@ -472,7 +460,6 @@ index_template = """
         .bottom-nav { position: fixed; bottom: 0; width: 100%; background: #161616; display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #252525; z-index: 99; }
         .nav-item { display: flex; flex-direction: column; align-items: center; color: #777; font-size: 10px; }
         .nav-item.active { color: var(--primary); }
-        
         .ad-container { margin: 15px 0; text-align: center; overflow: hidden; }
     </style>
 </head>
@@ -484,9 +471,17 @@ index_template = """
 </nav>
 
 <div class="category-container">
+    <!-- Updated Links: Using query params (?type=...) directly -->
     <a href="/" class="cat-btn {{ 'active' if not selected_cat and not request.args.get('type') else '' }}">🏠 Home</a>
-    <a href="/movies" class="cat-btn {{ 'active' if request.args.get('type') == 'movie' else '' }}"><i class="fas fa-film"></i> Movies</a>
-    <a href="/series" class="cat-btn {{ 'active' if request.args.get('type') == 'series' else '' }}"><i class="fas fa-tv"></i> Series</a>
+    
+    <a href="/?type=movie" class="cat-btn {{ 'active' if request.args.get('type') == 'movie' else '' }}">
+        <i class="fas fa-film"></i> All Movies
+    </a>
+    
+    <a href="/?type=series" class="cat-btn {{ 'active' if request.args.get('type') == 'series' else '' }}">
+        <i class="fas fa-tv"></i> All Web Series
+    </a>
+
     {% for cat in categories %}
     <a href="/?cat={{ cat.name }}" class="cat-btn {{ 'active' if selected_cat == cat.name else '' }}">
         {% if 'Bangla' in cat.name %}🇧🇩{% elif 'Hindi' in cat.name %}🇮🇳{% elif 'English' in cat.name %}🇺🇸{% else %}<i class="fas fa-tag"></i>{% endif %} {{ cat.name }}
@@ -501,7 +496,6 @@ index_template = """
     </form>
 </div>
 
-<!-- HERO SLIDER (Shown only on Home) -->
 {% if slider_movies %}
 <div class="slider-section">
     <div class="swiper mySwiper">
@@ -509,15 +503,12 @@ index_template = """
             {% for slide in slider_movies %}
             <div class="swiper-slide">
                 <a href="{{ url_for('movie_detail', movie_id=slide._id) }}" style="width:100%; height:100%; position:relative;">
-                    <img src="{{ slide.backdrop or slide.poster }}" class="slide-img" alt="{{ slide.title }}">
+                    <img src="{{ slide.backdrop or slide.poster }}" class="slide-img">
                     <div class="slide-overlay"></div>
                     <div class="slide-content">
                         <h2 class="slide-title">{{ slide.title }}</h2>
-                        <div class="slide-meta">
-                            {{ (slide.release_date or 'N/A')[:4] }} • {{ slide.language or 'Dual Audio' }}
-                        </div>
+                        <div class="slide-meta">{{ (slide.release_date or '')[:4] }} • {{ slide.language }}</div>
                     </div>
-                    <!-- Blue Badge like image -->
                     <div class="type-badge">{{ slide.type|upper if slide.type else 'MOVIE' }}</div>
                 </a>
             </div>
@@ -532,7 +523,13 @@ index_template = """
     {% if ad_settings.banner_ad %}<div class="ad-container">{{ ad_settings.banner_ad|safe }}</div>{% endif %}
 
     <div class="section-header">
-        <h2 class="section-title">{{ selected_cat if selected_cat else (query and 'Search Results' or 'Latest Uploads') }}</h2>
+        <h2 class="section-title">
+            {% if request.args.get('type') == 'movie' %} All Movies
+            {% elif request.args.get('type') == 'series' %} All Web Series
+            {% elif selected_cat %} {{ selected_cat }}
+            {% elif query %} Search Results
+            {% else %} Latest Uploads {% endif %}
+        </h2>
     </div>
 
     <div class="grid">
@@ -551,41 +548,33 @@ index_template = """
         {% endfor %}
     </div>
 
+    <!-- Pagination maintains type filters -->
     <div class="pagination">
         {% if page > 1 %}
-        <a href="/?page={{ page-1 }}" class="page-btn">Previous</a>
+        <a href="/?page={{ page-1 }}&type={{ request.args.get('type') or '' }}&cat={{ selected_cat or '' }}&q={{ query or '' }}" class="page-btn">Previous</a>
         {% endif %}
         {% if has_next %}
-        <a href="/?page={{ page+1 }}" class="page-btn">Next</a>
+        <a href="/?page={{ page+1 }}&type={{ request.args.get('type') or '' }}&cat={{ selected_cat or '' }}&q={{ query or '' }}" class="page-btn">Next</a>
         {% endif %}
     </div>
-    
     <div style="height: 20px;"></div>
 </main>
 
 <nav class="bottom-nav">
     <a href="/" class="nav-item {{ 'active' if not request.args.get('type') else '' }}"><i class="fas fa-home"></i>Home</a>
-    <a href="/movies" class="nav-item {{ 'active' if request.args.get('type') == 'movie' else '' }}"><i class="fas fa-film"></i>Movies</a>
-    <a href="/series" class="nav-item {{ 'active' if request.args.get('type') == 'series' else '' }}"><i class="fas fa-tv"></i>Series</a>
+    <a href="/?type=movie" class="nav-item {{ 'active' if request.args.get('type') == 'movie' else '' }}"><i class="fas fa-film"></i>Movies</a>
+    <a href="/?type=series" class="nav-item {{ 'active' if request.args.get('type') == 'series' else '' }}"><i class="fas fa-tv"></i>Series</a>
 </nav>
 
 {% if ad_settings.popunder %}{{ ad_settings.popunder|safe }}{% endif %}
 
-<!-- Swiper JS Script -->
 <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
 <script>
     var swiper = new Swiper(".mySwiper", {
         spaceBetween: 15,
         centeredSlides: true,
-        autoplay: {
-            delay: 3500,
-            disableOnInteraction: false,
-        },
-        pagination: {
-            el: ".swiper-pagination",
-            clickable: true,
-            dynamicBullets: true,
-        },
+        autoplay: { delay: 3500, disableOnInteraction: false },
+        pagination: { el: ".swiper-pagination", clickable: true, dynamicBullets: true },
         loop: true
     });
 </script>
@@ -593,6 +582,7 @@ index_template = """
 </body>
 </html>
 """
+
 # --- DETAIL TEMPLATE (Fixed Cast & Trailer) ---
 detail_template = """
 <!DOCTYPE html>
@@ -1063,17 +1053,24 @@ admin_settings = """
 @app.route('/')
 def home():
     page = int(request.args.get('page', 1))
-    per_page = 16 
+    per_page = 16
     query = request.args.get('q', '').strip()
     cat_filter = request.args.get('cat', '').strip()
-    type_filter = request.args.get('type', '').strip()
+    type_filter = request.args.get('type', '').strip() # movie or series
     
     db_query = {}
+    
+    # --- SEARCH LOGIC ---
     if query:
         db_query["title"] = {"$regex": query, "$options": "i"}
+    
+    # --- CATEGORY FILTER ---
     if cat_filter:
         db_query["category"] = cat_filter
+    
+    # --- TYPE FILTER (Movie vs Series) ---
     if type_filter:
+        # ডাটাবেসে 'type' ফিল্ড চেক করবে (case-insensitive)
         db_query["type"] = type_filter
 
     # মোট মুভি এবং পেজিনেশন
@@ -1081,15 +1078,15 @@ def home():
     movie_list = list(movies.find(db_query).sort([('updated_at', -1), ('_id', -1)]).skip((page-1)*per_page).limit(per_page))
     cat_list = list(categories.find())
     
-    # --- SLIDER LOGIC (New) ---
-    # স্লাইডারের জন্য লেটেস্ট ৫টি মুভি নেওয়া হচ্ছে যাদের ব্যাকড্রপ ইমেজ আছে
+    # --- SLIDER LOGIC ---
     slider_movies = []
-    if not query and not cat_filter:
+    if not query and not cat_filter and not type_filter:
         slider_movies = list(movies.find({"backdrop": {"$ne": None}}).sort([('created_at', -1)]).limit(5))
 
     has_next = (page * per_page) < total_movies
 
     return render_template_string(index_template, movies=movie_list, categories=cat_list, selected_cat=cat_filter, query=query, slider_movies=slider_movies, page=page, has_next=has_next)
+
 @app.route('/movies')
 def view_movies():
     return redirect(url_for('home', type='movie'))
