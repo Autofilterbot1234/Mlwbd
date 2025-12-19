@@ -42,28 +42,29 @@ except Exception as e:
     print(f"❌ MongoDB Connection Error: {e}")
     sys.exit(1)
 
-# === Helper Functions ===
+# === Helper Functions (UPDATED FOR SMART PARSING) ===
 
 def clean_filename(filename):
     """
-    ফাইলের নাম থেকে শুধু মুভি বা সিরিজের আসল নামটা বের করে।
-    S01E01, Year, Quality ইত্যাদি বাদ দিয়ে দেয়।
+    ফাইলের নাম ক্লিন করে মেইন টাইটেল বের করে।
+    এটি 'Combined', 'S01', '[E09' দেখলেই থেমে যাবে।
     """
-    # ১. এক্সটেনশন বাদ দেওয়া
+    # ১. এক্সটেনশন এবং ব্র্যাকেট ক্লিন করা (কিন্তু শুরুতে রেঞ্জ ব্র্যাকেট রেখে দেওয়া ভালো, তাই সাবধানে)
     name = os.path.splitext(filename)[0]
+    name = name.replace(".", " ").replace("_", " ")
     
-    # ২. ডট, আন্ডারস্কোর, ব্র্যাকেট সব স্পেস বানিয়ে দেওয়া
-    name = re.sub(r'[._\-\[\]\(\)]', ' ', name)
+    # ২. এই কিওয়ার্ডগুলো পেলেই নাম নেওয়া বন্ধ করে দেবে
+    # (Combined, S01, E01, Year, Quality)
+    stop_pattern = r'(\bS\d+|Season|Combined|Episodes?|Ep\s*\d+|\[E\d+|\b(19|20)\d{2}\b|\b(?:480|720|1080|2160)[pP]\b)'
     
-    # ৩. যেখানেই Year, Quality, Season, Episode পাওয়া যাবে, সেখান থেকেই নাম কেটে ফেলা
-    # যেমন: "Mirzapur Season 2 Episode 5 720p" -> "Mirzapur"
-    match = re.search(r'(\b(19|20)\d{2}\b|\b(?:480|720|1080|2160)[pP]\b|S\d+|Season|Episode|Ep\s*\d+)', name, re.IGNORECASE)
+    match = re.search(stop_pattern, name, re.IGNORECASE)
     if match:
         name = name[:match.start()]
     
-    # ৪. ফালতু শব্দ (Hindi, Dual, Web-DL) পরিষ্কার করা
-    junk_words = r'\b(hindi|dual|audio|dubbed|sub|esub|web-dl|bluray|rip|x264|hevc|amzn|nf|dsnp)\b'
+    # ৩. অপ্রয়োজনীয় ক্যারেক্টার ও ফালতু শব্দ রিমুভ
+    junk_words = r'\b(hindi|dual|audio|dubbed|sub|esub|web-dl|bluray|rip|x264|hevc|10bit|kor|korean)\b'
     name = re.sub(junk_words, '', name, flags=re.IGNORECASE)
+    name = re.sub(r'[\[\]\(\)\{\}]', '', name) # ব্র্যাকেট ক্লিন
     
     return name.strip()
 
@@ -77,29 +78,49 @@ def get_file_quality(filename):
 
 def get_episode_label(filename):
     """
-    ফাইলের নাম থেকে এপিসোড বা সিজন নম্বর বের করে।
+    স্মার্টলি এপিসোড নম্বর বা রেঞ্জ বের করে।
+    Input: ...Combined [E09-E16]... -> Output: S01 E09-E16 (যদি সিজন থাকে)
     """
-    # S01E05 ফরম্যাট
+    label = ""
+    season = ""
+    
+    # ১. সিজন খোঁজা (S01 বা Season 1)
+    match_s = re.search(r'\b(S|Season)\s*(\d+)', filename, re.IGNORECASE)
+    if match_s:
+        season = f"S{int(match_s.group(2)):02d}"
+
+    # ২. রেঞ্জ খোঁজা (E09-E16 বা E09-16)
+    # প্যাটার্ন: E(সংখ্যা) - E?(সংখ্যা)
+    match_range = re.search(r'E(\d+)\s*-\s*E?(\d+)', filename, re.IGNORECASE)
+    
+    if match_range:
+        # রেঞ্জ পাওয়া গেলে (যেমন: E09-E16)
+        start = int(match_range.group(1))
+        end = int(match_range.group(2))
+        episode_part = f"E{start:02d}-{end:02d}"
+        label = f"{season} {episode_part}" if season else episode_part
+        return label.strip()
+
+    # ৩. যদি রেঞ্জ না থাকে, সাধারণ S01E05 খোঁজা
     match_se = re.search(r'\bS(\d+)\s*E(\d+)\b', filename, re.IGNORECASE)
     if match_se:
         return f"S{int(match_se.group(1)):02d} E{int(match_se.group(2)):02d}"
     
-    # Episode 05 ফরম্যাট
+    # ৪. শুধু Episode 05 খোঁজা
     match_ep = re.search(r'\b(Episode|Ep|E)\s*(\d+)\b', filename, re.IGNORECASE)
     if match_ep:
-        return f"Episode {int(match_ep.group(2))}"
+        # খেয়াল রাখতে হবে যেন এটা Year (2024) কে এপিসোড না ভাবে
+        ep_num = int(match_ep.group(2))
+        if ep_num < 1900: 
+            return f"{season} Episode {ep_num}".strip()
     
-    # Season 01 ফরম্যাট (ফুল সিজন ফাইল হলে)
-    match_s = re.search(r'\bSeason\s*(\d+)\b', filename, re.IGNORECASE)
-    if match_s:
-        return f"Season {int(match_s.group(1))}"
+    # ৫. শুধু সিজন (Season 1)
+    if season and not label:
+        return f"Season {int(match_s.group(2))}"
         
     return None
 
 def get_tmdb_details(title, content_type="movie"):
-    """
-    TMDB থেকে ক্লিন টাইটেল দিয়ে পোস্টার ও ডিটেইলস আনা।
-    """
     if not TMDB_API_KEY: return {"title": title}
     tmdb_type = "tv" if content_type == "series" else "movie"
     try:
@@ -111,7 +132,6 @@ def get_tmdb_details(title, content_type="movie"):
             backdrop = f"https://image.tmdb.org/t/p/w1280{res['backdrop_path']}" if res.get('backdrop_path') else None
             return {
                 "tmdb_id": res.get("id"),
-                # সিরিজের ক্ষেত্রে TMDB 'name' দেয়, মুভির ক্ষেত্রে 'title'
                 "title": res.get("name") if tmdb_type == "tv" else res.get("title"),
                 "overview": res.get("overview"),
                 "poster": poster,
@@ -121,7 +141,6 @@ def get_tmdb_details(title, content_type="movie"):
             }
     except Exception as e:
         print(f"TMDB Error: {e}")
-    # যদি TMDB তে না পাওয়া যায়, তবে ক্লিন করা টাইটেলটাই রিটার্ন করবে
     return {"title": title}
 
 def escape_markdown(text):
@@ -181,27 +200,27 @@ def telegram_webhook():
         raw_caption = msg.get('caption')
         raw_input = raw_caption if raw_caption else file_name
         
-        # ১. ফাইলের নাম ক্লিন করে শুধু সিরিজের নাম বের করা হচ্ছে
+        # ১. ফাইলের নাম ক্লিন করে শুধু সিরিজের নাম (যেমন: Goblin) বের করা
         search_title = clean_filename(raw_input) 
         
-        # ২. কন্টেন্ট টাইপ নির্ধারণ
+        # ২. কন্টেন্ট টাইপ (সিরিজ কি না)
         content_type = "movie"
-        if re.search(r'(S\d+|Season|Episode|Ep\s*\d+)', file_name, re.IGNORECASE) or re.search(r'(S\d+|Season)', str(raw_caption), re.IGNORECASE):
+        if re.search(r'(S\d+|Season|Episode|Ep\s*\d+|Combined|E\d+-E\d+)', file_name, re.IGNORECASE) or re.search(r'(S\d+|Season)', str(raw_caption), re.IGNORECASE):
             content_type = "series"
 
-        # ৩. TMDB থেকে মেইন সিরিজের ডিটেইলস আনা
+        # ৩. TMDB ডিটেইলস
         tmdb_data = get_tmdb_details(search_title, content_type)
-        final_title = tmdb_data.get('title', search_title) # এটাই হলো মেইন নাম (যেমন: "Mirzapur")
-        
+        final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
         
-        # ৪. ফাইলের নাম থেকে এপিসোড বের করা (S01E05)
+        # ৪. এপিসোড লেবেল (Smart Parsing)
         episode_label = get_episode_label(file_name)
+        
+        # যদি লেবেল না পাওয়া যায় এবং এটা সিরিজ হয়, তবে ফাইলের নামের কিছু অংশ নেওয়া
         if content_type == "series" and not episode_label:
-            # যদি প্যাটার্ন না পাওয়া যায়, তবে ফাইলের নামের অবশিষ্ট অংশ লেবেল হিসেবে ব্যবহার হবে
             clean_part = file_name.replace(search_title, "").replace(".", " ").strip()
             if len(clean_part) > 3:
-                episode_label = clean_part[:20]
+                episode_label = clean_part[:25]
 
         unique_code = str(uuid.uuid4())[:8]
 
@@ -210,6 +229,8 @@ def telegram_webhook():
             language = "Hindi / Dual"
         elif re.search(r'\b(bangla|bengali)\b', raw_input, re.IGNORECASE):
             language = "Bengali"
+        elif re.search(r'\b(korean|kor)\b', raw_input, re.IGNORECASE):
+            language = "Korean"
         else:
             language = "English"
 
@@ -224,30 +245,19 @@ def telegram_webhook():
             "added_at": datetime.utcnow()
         }
 
-        # ৫. ডাটাবেসে চেক করা মেইন টাইটেল দিয়ে (যাতে সব এপিসোড এক জায়গায় জমা হয়)
         existing_movie = movies.find_one({"title": final_title})
         movie_id = None
         should_notify = False
 
         if existing_movie:
-            # কন্টেন্ট আগে থেকেই আছে, এখন শুধু নতুন এপিসোড বা ফাইল যোগ হবে
             if content_type == "series" and episode_label:
                 is_duplicate = False
                 for f in existing_movie.get('files', []):
-                    # চেক করছি সেইম এপিসোড সেইম কোয়ালিটিতে আগে আছে কিনা
                     if f.get('episode_label') == episode_label and f.get('quality') == quality:
                         is_duplicate = True
                         break
-                
-                # যদি একদম নতুন এপিসোড হয়, নোটিফিকেশন যাবে
-                if not is_duplicate:
-                    # এখানে লজিক: আগে যদি এই এপিসোড না থাকে, তবে নোটিফিকেশন অন
-                    # তবে সিম্পল রাখার জন্য আমরা শুধু নতুন ফাইল এলেই আপডেট দিচ্ছি, কিন্তু ডুপ্লিকেট হলে না।
-                    should_notify = True
-                else:
-                    should_notify = False
+                should_notify = not is_duplicate
             else:
-                # মুভির ক্ষেত্রে বা লেবেল না থাকলে নোটিফিকেশন বন্ধ (যদি আগেই মুভিটা থেকে থাকে)
                 should_notify = False
 
             movies.update_one(
@@ -256,11 +266,9 @@ def telegram_webhook():
             )
             movie_id = existing_movie['_id']
         else:
-            # একদম নতুন সিরিজ বা মুভি
             should_notify = True
-            
             new_movie = {
-                "title": final_title, # এখানে শুধু "Mirzapur" সেভ হবে
+                "title": final_title,
                 "overview": tmdb_data.get('overview'),
                 "poster": tmdb_data.get('poster'),
                 "backdrop": tmdb_data.get('backdrop'),
@@ -275,11 +283,11 @@ def telegram_webhook():
             res = movies.insert_one(new_movie)
             movie_id = res.inserted_id
 
-        # --- Notification & Button Logic ---
+        # --- Notification Logic ---
         if movie_id and WEBSITE_URL:
             dl_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
             
-            # 1. Source Channel Edit (Add Button)
+            # Edit Source Channel Message
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
@@ -292,12 +300,10 @@ def telegram_webhook():
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # 2. PUBLIC CHANNEL NOTIFICATION (Only if should_notify is True)
+            # Public Channel Notification
             if PUBLIC_CHANNEL_ID and should_notify:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
-                
-                # যদি সিরিজ হয় এবং এপিসোড লেবেল থাকে, সেটা নোটিফিকেশনে দেখাবে
-                if content_type == "series" and episode_label:
+                if episode_label:
                     notify_caption += f"📌 {escape_markdown(episode_label)}\n"
                 
                 notify_caption += f"\n⭐ Rating: {tmdb_data.get('vote_average', 'N/A')}\n"
@@ -321,11 +327,11 @@ def telegram_webhook():
                     notify_payload['photo'] = tmdb_data.get('poster')
                     notify_payload['caption'] = notify_caption
                     try: requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
-                    except Exception as e: print(f"Notify Error: {e}")
+                    except: pass
                 else:
                     notify_payload['text'] = notify_caption
                     try: requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=notify_payload)
-                    except Exception as e: print(f"Notify Error: {e}")
+                    except: pass
 
         return jsonify({'status': 'success'})
 
@@ -589,6 +595,7 @@ detail_template = """
                     <div style="font-size: 0.75rem; color: #888; margin-top: 3px;">
                         Size: {{ file.size }} • Format: {{ file.file_type|upper }}
                     </div>
+                    <!-- ফাইলের আসল নামটা ছোট করে নিচে দেখানো -->
                     <div style="font-size: 0.65rem; color: #555; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">
                         {{ file.filename }}
                     </div>
