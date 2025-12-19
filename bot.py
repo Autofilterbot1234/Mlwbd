@@ -42,29 +42,27 @@ except Exception as e:
     print(f"❌ MongoDB Connection Error: {e}")
     sys.exit(1)
 
-# === Helper Functions (UPDATED FOR SMART PARSING) ===
+# === Helper Functions ===
 
 def clean_filename(filename):
     """
     ফাইলের নাম ক্লিন করে মেইন টাইটেল বের করে।
     এটি 'Combined', 'S01', '[E09' দেখলেই থেমে যাবে।
     """
-    # ১. এক্সটেনশন এবং ব্র্যাকেট ক্লিন করা (কিন্তু শুরুতে রেঞ্জ ব্র্যাকেট রেখে দেওয়া ভালো, তাই সাবধানে)
     name = os.path.splitext(filename)[0]
     name = name.replace(".", " ").replace("_", " ")
     
-    # ২. এই কিওয়ার্ডগুলো পেলেই নাম নেওয়া বন্ধ করে দেবে
-    # (Combined, S01, E01, Year, Quality)
+    # নাম ক্লিন করার সময় এই কিওয়ার্ডগুলো পেলেই থামা হবে
     stop_pattern = r'(\bS\d+|Season|Combined|Episodes?|Ep\s*\d+|\[E\d+|\b(19|20)\d{2}\b|\b(?:480|720|1080|2160)[pP]\b)'
     
     match = re.search(stop_pattern, name, re.IGNORECASE)
     if match:
         name = name[:match.start()]
     
-    # ৩. অপ্রয়োজনীয় ক্যারেক্টার ও ফালতু শব্দ রিমুভ
-    junk_words = r'\b(hindi|dual|audio|dubbed|sub|esub|web-dl|bluray|rip|x264|hevc|10bit|kor|korean)\b'
+    # অপ্রয়োজনীয় শব্দ রিমুভ (ভাষা ও ফরম্যাট)
+    junk_words = r'\b(hindi|dual|multi|audio|dubbed|sub|esub|web-dl|bluray|rip|x264|hevc|10bit|kor|korean|eng|jap|bengali|bangla)\b'
     name = re.sub(junk_words, '', name, flags=re.IGNORECASE)
-    name = re.sub(r'[\[\]\(\)\{\}]', '', name) # ব্র্যাকেট ক্লিন
+    name = re.sub(r'[\[\]\(\)\{\}]', '', name)
     
     return name.strip()
 
@@ -76,45 +74,84 @@ def get_file_quality(filename):
     if "480p" in filename: return "480p SD"
     return "HD"
 
+def detect_language(text):
+    """
+    স্মার্টলি ফাইলের নাম থেকে ভাষা ডিটেক্ট করে।
+    """
+    text = text.lower()
+    detected = []
+
+    # ১. হাই প্রায়োরিটি কিওয়ার্ড (Multi/Dual)
+    if re.search(r'\b(multi|multi audio)\b', text):
+        return "Multi Audio" # মাল্টি থাকলে বাকিগুলো দেখানোর দরকার নেই সাধারণত
+    
+    if re.search(r'\b(dual|dual audio)\b', text):
+        detected.append("Dual Audio")
+
+    # ২. নির্দিষ্ট ভাষার তালিকা
+    lang_map = {
+        'Bengali': ['bengali', 'bangla', 'ben'],
+        'Hindi': ['hindi', 'hin'],
+        'English': ['english', 'eng'],
+        'Tamil': ['tamil', 'tam'],
+        'Telugu': ['telugu', 'tel'],
+        'Malayalam': ['malayalam', 'mal'],
+        'Kannada': ['kannada', 'kan'],
+        'Korean': ['korean', 'kor'],
+        'Japanese': ['japanese', 'jap'],
+        'Chinese': ['chinese', 'chi'],
+        'Spanish': ['spanish', 'spa'],
+        'French': ['french', 'fre'],
+        'Urdu': ['urdu'],
+        'Punjabi': ['punjabi', 'pan']
+    }
+
+    for lang_name, keywords in lang_map.items():
+        pattern = r'\b(' + '|'.join(keywords) + r')\b'
+        if re.search(pattern, text):
+            detected.append(lang_name)
+
+    # যদি কিছুই না পাওয়া যায়
+    if not detected:
+        return "English" # ডিফল্ট
+
+    # ডুপ্লিকেট রিমুভ করে ফরম্যাট করা (যেমন: Dual Audio + Hindi + English)
+    return " + ".join(list(dict.fromkeys(detected)))
+
 def get_episode_label(filename):
     """
     স্মার্টলি এপিসোড নম্বর বা রেঞ্জ বের করে।
-    Input: ...Combined [E09-E16]... -> Output: S01 E09-E16 (যদি সিজন থাকে)
     """
     label = ""
     season = ""
     
-    # ১. সিজন খোঁজা (S01 বা Season 1)
+    # ১. সিজন খোঁজা
     match_s = re.search(r'\b(S|Season)\s*(\d+)', filename, re.IGNORECASE)
     if match_s:
         season = f"S{int(match_s.group(2)):02d}"
 
-    # ২. রেঞ্জ খোঁজা (E09-E16 বা E09-16)
-    # প্যাটার্ন: E(সংখ্যা) - E?(সংখ্যা)
+    # ২. রেঞ্জ খোঁজা (E09-E16)
     match_range = re.search(r'E(\d+)\s*-\s*E?(\d+)', filename, re.IGNORECASE)
-    
     if match_range:
-        # রেঞ্জ পাওয়া গেলে (যেমন: E09-E16)
         start = int(match_range.group(1))
         end = int(match_range.group(2))
         episode_part = f"E{start:02d}-{end:02d}"
         label = f"{season} {episode_part}" if season else episode_part
         return label.strip()
 
-    # ৩. যদি রেঞ্জ না থাকে, সাধারণ S01E05 খোঁজা
+    # ৩. সাধারণ S01E05
     match_se = re.search(r'\bS(\d+)\s*E(\d+)\b', filename, re.IGNORECASE)
     if match_se:
         return f"S{int(match_se.group(1)):02d} E{int(match_se.group(2)):02d}"
     
-    # ৪. শুধু Episode 05 খোঁজা
+    # ৪. শুধু Episode 05 (কিন্তু সাল নয়)
     match_ep = re.search(r'\b(Episode|Ep|E)\s*(\d+)\b', filename, re.IGNORECASE)
     if match_ep:
-        # খেয়াল রাখতে হবে যেন এটা Year (2024) কে এপিসোড না ভাবে
         ep_num = int(match_ep.group(2))
         if ep_num < 1900: 
             return f"{season} Episode {ep_num}".strip()
     
-    # ৫. শুধু সিজন (Season 1)
+    # ৫. শুধু সিজন
     if season and not label:
         return f"Season {int(match_s.group(2))}"
         
@@ -200,10 +237,10 @@ def telegram_webhook():
         raw_caption = msg.get('caption')
         raw_input = raw_caption if raw_caption else file_name
         
-        # ১. ফাইলের নাম ক্লিন করে শুধু সিরিজের নাম (যেমন: Goblin) বের করা
+        # ১. টাইটেল ক্লিন করা
         search_title = clean_filename(raw_input) 
         
-        # ২. কন্টেন্ট টাইপ (সিরিজ কি না)
+        # ২. কন্টেন্ট টাইপ নির্ধারণ
         content_type = "movie"
         if re.search(r'(S\d+|Season|Episode|Ep\s*\d+|Combined|E\d+-E\d+)', file_name, re.IGNORECASE) or re.search(r'(S\d+|Season)', str(raw_caption), re.IGNORECASE):
             content_type = "series"
@@ -213,26 +250,17 @@ def telegram_webhook():
         final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
         
-        # ৪. এপিসোড লেবেল (Smart Parsing)
+        # ৪. এপিসোড লেবেল
         episode_label = get_episode_label(file_name)
-        
-        # যদি লেবেল না পাওয়া যায় এবং এটা সিরিজ হয়, তবে ফাইলের নামের কিছু অংশ নেওয়া
         if content_type == "series" and not episode_label:
             clean_part = file_name.replace(search_title, "").replace(".", " ").strip()
             if len(clean_part) > 3:
                 episode_label = clean_part[:25]
 
-        unique_code = str(uuid.uuid4())[:8]
+        # ৫. ল্যাঙ্গুয়েজ ডিটেকশন (UPDATED)
+        language = detect_language(raw_input)
 
-        language = "Unknown"
-        if re.search(r'\b(hindi|dual)\b', raw_input, re.IGNORECASE):
-            language = "Hindi / Dual"
-        elif re.search(r'\b(bangla|bengali)\b', raw_input, re.IGNORECASE):
-            language = "Bengali"
-        elif re.search(r'\b(korean|kor)\b', raw_input, re.IGNORECASE):
-            language = "Korean"
-        else:
-            language = "English"
+        unique_code = str(uuid.uuid4())[:8]
 
         file_obj = {
             "file_id": file_id,
@@ -260,6 +288,7 @@ def telegram_webhook():
             else:
                 should_notify = False
 
+            # নতুন ল্যাঙ্গুয়েজ আসলে সেটাও আপডেট করা যেতে পারে (অপশনাল, এখানে শুধু ফাইল অ্যাড হচ্ছে)
             movies.update_one(
                 {"_id": existing_movie['_id']},
                 {"$push": {"files": file_obj}, "$set": {"updated_at": datetime.utcnow()}}
@@ -274,7 +303,7 @@ def telegram_webhook():
                 "backdrop": tmdb_data.get('backdrop'),
                 "release_date": tmdb_data.get('release_date'),
                 "vote_average": tmdb_data.get('vote_average'),
-                "language": language, 
+                "language": language, # ডিটেক্ট করা ল্যাঙ্গুয়েজ এখানে বসবে
                 "type": content_type,
                 "files": [file_obj],
                 "created_at": datetime.utcnow(),
@@ -287,7 +316,7 @@ def telegram_webhook():
         if movie_id and WEBSITE_URL:
             dl_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
             
-            # Edit Source Channel Message
+            # Edit Source Channel
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
