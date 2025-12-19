@@ -151,7 +151,6 @@ def telegram_webhook():
         quality = get_file_quality(file_name)
         unique_code = str(uuid.uuid4())[:8]
 
-        # ডিফল্ট ল্যাঙ্গুয়েজ ডিটেকশন (সিম্পল)
         language = "Unknown"
         if re.search(r'\b(hindi|dual)\b', raw_input, re.IGNORECASE):
             language = "Hindi / Dual"
@@ -258,7 +257,7 @@ index_template = """
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-        :root { --primary: #E50914; --dark: #0f0f0f; --card-bg: #1a1a1a; --text: #fff; --text-sec: #b3b3b3; }
+        :root { --primary: #E50914; --dark: #0f0f0f; --card-bg: #1a1a1a; --text: #fff; }
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Poppins', sans-serif; -webkit-tap-highlight-color: transparent; }
         body { background-color: var(--dark); color: var(--text); padding-bottom: 70px; }
         a { text-decoration: none; color: inherit; }
@@ -280,21 +279,17 @@ index_template = """
         .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
         .section-title { font-size: 1.1rem; border-left: 3px solid var(--primary); padding-left: 10px; font-weight: 600; }
 
-        /* Responsive Grid */
         .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
         @media (min-width: 600px) { .grid { grid-template-columns: repeat(4, 1fr); gap: 15px; } }
         @media (min-width: 900px) { .grid { grid-template-columns: repeat(6, 1fr); gap: 20px; } }
 
-        .card { position: relative; background: var(--card-bg); border-radius: 6px; overflow: hidden; aspect-ratio: 2/3; transition: transform 0.2s; }
-        .card:active { transform: scale(0.98); }
+        .card { position: relative; background: var(--card-bg); border-radius: 6px; overflow: hidden; aspect-ratio: 2/3; }
         .card-img { width: 100%; height: 100%; object-fit: cover; }
         .card-overlay { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 60%); display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; }
         .card-title { font-size: 0.8rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
         .card-meta { font-size: 0.7rem; color: #ccc; margin-top: 2px; display: flex; justify-content: space-between; }
         
         .rating-badge { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.7); color: #ffb400; padding: 2px 5px; border-radius: 3px; font-size: 0.65rem; font-weight: bold; backdrop-filter: blur(4px); }
-        
-        /* Language Badge Update */
         .lang-badge { position: absolute; top: 6px; right: 6px; background: var(--primary); color: #fff; padding: 2px 6px; border-radius: 3px; font-size: 0.6rem; font-weight: 600; text-transform: uppercase; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
 
         .bottom-nav { position: fixed; bottom: 0; width: 100%; background: #161616; display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid #252525; z-index: 99; backdrop-filter: blur(10px); }
@@ -398,10 +393,28 @@ detail_template = """
         .file-section { background: var(--bg-sec); border-radius: 8px; padding: 15px; border: 1px solid #2a2a2a; }
         .section-head { font-size: 1rem; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; color: var(--primary); font-weight: 600; border-bottom: 1px solid #333; padding-bottom: 10px; }
         
-        .file-item { display: flex; justify-content: space-between; align-items: center; background: #252525; padding: 12px; border-radius: 6px; margin-bottom: 10px; }
-        .file-details h4 { font-size: 0.9rem; margin-bottom: 3px; color: #fff; }
-        .file-details span { font-size: 0.75rem; color: #888; display: block; }
-        .btn-dl { background: #0088cc; color: white; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        /* Updated Button Styles */
+        .file-item { display: flex; flex-direction: column; align-items: center; background: #252525; padding: 15px; border-radius: 8px; margin-bottom: 12px; text-align: center; }
+        .file-details h4 { font-size: 1rem; margin-bottom: 4px; color: #fff; }
+        .file-details span { font-size: 0.8rem; color: #999; }
+        
+        .btn-dl { 
+            background: #0088cc; 
+            color: white; 
+            width: 100%; /* Full width */
+            padding: 10px; 
+            margin-top: 10px; 
+            border-radius: 6px; 
+            text-decoration: none; 
+            font-weight: 600; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 8px;
+            font-size: 0.95rem;
+            transition: 0.3s;
+        }
+        .btn-dl:hover { background: #0077b5; transform: translateY(-2px); }
         
         @media (min-width: 600px) {
             .movie-info { flex-direction: row; text-align: left; align-items: flex-end; padding: 0 20px; }
@@ -447,10 +460,10 @@ detail_template = """
             <div class="file-item">
                 <div class="file-details">
                     <h4>{{ file.quality }}</h4>
-                    <span>Size: {{ file.size }}</span>
+                    <span>Size: {{ file.size }} • Format: {{ file.file_type|upper }}</span>
                 </div>
                 <a href="https://t.me/{{ BOT_USERNAME }}?start={{ file.unique_code }}" class="btn-dl">
-                    <i class="fab fa-telegram-plane"></i>
+                    <i class="fab fa-telegram-plane"></i> Get File
                 </a>
             </div>
             {% endfor %}
@@ -471,7 +484,7 @@ detail_template = """
 """
 
 # ================================
-#        ADMIN PANEL TEMPLATES
+#        ADMIN PANEL TEMPLATES (FIXED)
 # ================================
 
 admin_base = """
@@ -512,12 +525,11 @@ admin_base = """
 </div>
 
 <div class="main-content">
-    {% block content %}{% endblock %}
+    <!-- CONTENT_GOES_HERE -->
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // TMDB Search Logic for Edit Page
     function searchTMDB() {
         const query = document.getElementById('tmdbQuery').value;
         const resultDiv = document.getElementById('tmdbResults');
@@ -534,11 +546,8 @@ admin_base = """
             }
             let html = '<div class="list-group mt-2">';
             data.results.forEach(item => {
-                // Determine title and date based on type
                 let title = item.title || item.name;
                 let date = item.release_date || item.first_air_date || 'N/A';
-                
-                // Convert object to JSON string safely for the button
                 let itemStr = JSON.stringify(item).replace(/'/g, "&#39;");
                 
                 html += `<button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-3" onclick='fillForm(${itemStr})'>
@@ -561,11 +570,7 @@ admin_base = """
         document.querySelector('input[name="backdrop"]').value = 'https://image.tmdb.org/t/p/w1280' + data.backdrop_path;
         document.querySelector('input[name="release_date"]').value = data.release_date || data.first_air_date;
         document.querySelector('input[name="vote_average"]').value = data.vote_average;
-        
-        // Update Preview
         document.querySelector('.poster-preview').src = 'https://image.tmdb.org/t/p/w500' + data.poster_path;
-        
-        // Clear results
         document.getElementById('tmdbResults').innerHTML = '<div class="text-success">Data Applied! Click Update to Save.</div>';
     }
 </script>
@@ -574,8 +579,6 @@ admin_base = """
 """
 
 admin_dashboard = """
-{% extends "base" %}
-{% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Manage Movies</h2>
     <form class="d-flex" method="GET">
@@ -608,7 +611,6 @@ admin_dashboard = """
     {% endfor %}
 </div>
 
-<!-- Pagination (Simple) -->
 <div class="d-flex justify-content-center mt-4">
     {% if page > 1 %}
     <a href="?page={{ page-1 }}&q={{ q }}" class="btn btn-outline-secondary me-2">Previous</a>
@@ -616,12 +618,9 @@ admin_dashboard = """
     <span class="align-self-center mx-2">Page {{ page }}</span>
     <a href="?page={{ page+1 }}&q={{ q }}" class="btn btn-outline-secondary ms-2">Next</a>
 </div>
-{% endblock %}
 """
 
 admin_edit = """
-{% extends "base" %}
-{% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h3>Edit Movie: <span class="text-primary">{{ movie.title }}</span></h3>
@@ -701,12 +700,9 @@ admin_edit = """
         </div>
     </div>
 </div>
-{% endblock %}
 """
 
 admin_settings = """
-{% extends "base" %}
-{% block content %}
 <div class="container" style="max-width: 800px;">
     <h3 class="mb-4">Website Settings</h3>
     <div class="card p-4">
@@ -727,7 +723,6 @@ admin_settings = """
         </form>
     </div>
 </div>
-{% endblock %}
 """
 
 # ================================
@@ -771,7 +766,7 @@ def movie_detail(movie_id):
         return "Invalid ID", 400
 
 # ================================
-#        ADMIN ROUTES
+#        ADMIN ROUTES (FIXED)
 # ================================
 
 @app.route('/admin')
@@ -788,9 +783,9 @@ def admin_home():
     
     movie_list = list(movies.find(filter_q).sort('_id', -1).skip((page-1)*per_page).limit(per_page))
     
-    # Template inheritance setup manually for single file
-    base = admin_base.replace('{% block content %}{% endblock %}', admin_dashboard)
-    return render_template_string(base, movies=movie_list, page=page, q=q, active='dashboard')
+    # Fix: Manually combine base + dashboard strings
+    full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_dashboard)
+    return render_template_string(full_html, movies=movie_list, page=page, q=q, active='dashboard')
 
 @app.route('/admin/movie/edit/<movie_id>', methods=['GET', 'POST'])
 def admin_edit_movie(movie_id):
@@ -812,8 +807,10 @@ def admin_edit_movie(movie_id):
         return redirect(url_for('admin_home'))
         
     movie = movies.find_one({"_id": ObjectId(movie_id)})
-    base = admin_base.replace('{% block content %}{% endblock %}', admin_edit)
-    return render_template_string(base, movie=movie, active='dashboard')
+    
+    # Fix: Manually combine base + edit strings
+    full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_edit)
+    return render_template_string(full_html, movie=movie, active='dashboard')
 
 @app.route('/admin/movie/delete/<movie_id>')
 def admin_delete_movie(movie_id):
@@ -833,8 +830,10 @@ def admin_settings_page():
         return redirect(url_for('admin_settings_page'))
     
     curr_settings = settings.find_one() or {}
-    base = admin_base.replace('{% block content %}{% endblock %}', admin_settings)
-    return render_template_string(base, settings=curr_settings, active='settings')
+    
+    # Fix: Manually combine base + settings strings
+    full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_settings)
+    return render_template_string(full_html, settings=curr_settings, active='settings')
 
 # API for Admin Panel (JS Fetch)
 @app.route('/admin/api/tmdb')
