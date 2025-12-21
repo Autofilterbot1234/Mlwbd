@@ -342,8 +342,9 @@ def telegram_webhook():
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # --- PUBLIC CHANNEL NOTIFICATION (Home Link) ---
-            if PUBLIC_CHANNEL_ID and should_notify:
+            # --- PUBLIC CHANNEL NOTIFICATION (ONLY IF POSTER EXISTS) ---
+            # এখানে 'and tmdb_data.get('poster')' যোগ করা হয়েছে
+            if PUBLIC_CHANNEL_ID and should_notify and tmdb_data.get('poster'):
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
                 if episode_label: notify_caption += f"📌 {escape_markdown(episode_label)}\n"
                 
@@ -362,18 +363,14 @@ def telegram_webhook():
                 notify_payload = {
                     'chat_id': PUBLIC_CHANNEL_ID,
                     'parse_mode': 'Markdown',
-                    'reply_markup': json.dumps({"inline_keyboard": pub_keyboard})
+                    'reply_markup': json.dumps({"inline_keyboard": pub_keyboard}),
+                    'photo': tmdb_data.get('poster'),
+                    'caption': notify_caption
                 }
 
-                if tmdb_data.get('poster'):
-                    notify_payload['photo'] = tmdb_data.get('poster')
-                    notify_payload['caption'] = notify_caption
-                    try: requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
-                    except: pass
-                else:
-                    notify_payload['text'] = notify_caption
-                    try: requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=notify_payload)
-                    except: pass
+                # শুধুমাত্র sendPhoto ব্যবহার হবে, sendMessage নয়
+                try: requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
+                except: pass
 
         return jsonify({'status': 'success'})
 
