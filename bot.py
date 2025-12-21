@@ -33,7 +33,6 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 DELETE_TIMEOUT = 600 
 
 # নোটিফিকেশন কুলডাউন (সেকেন্ডে) - ৩০ মিনিট = ১৮০০ সেকেন্ড
-# অর্থাৎ একবার নোটিফিকেশন যাওয়ার পর ৩০ মিনিটের মধ্যে একই মুভি/সিরিজের জন্য আর নোটিফিকেশন যাবে না
 NOTIFICATION_COOLDOWN = 1800 
 
 # এডমিন ক্রেডেনশিয়াল
@@ -297,7 +296,7 @@ def telegram_webhook():
                     {"$push": {"files": file_obj}, "$set": {"updated_at": datetime.utcnow()}}
                 )
                 movie_id = existing_movie['_id']
-                should_notify = True # ফাইল নতুন হলে নোটিফিকেশন দেওয়ার চেষ্টা করব
+                should_notify = True
         else:
             should_notify = True
             new_movie = {
@@ -322,12 +321,11 @@ def telegram_webhook():
             movie_id = res.inserted_id
 
         if movie_id and WEBSITE_URL:
-            # সোর্স চ্যানেলের জন্য ডিরেক্ট লিংক (যাতে এডমিন চেক করতে পারে)
+            # সোর্স চ্যানেলের জন্য ডিরেক্ট লিংক
             direct_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
-            # পাবলিক চ্যানেলের জন্য হোম লিংক
             home_link = WEBSITE_URL.rstrip('/')
             
-            # --- SOURCE CHANNEL BUTTON (Direct Link) ---
+            # --- SOURCE CHANNEL BUTTON ---
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
@@ -339,9 +337,8 @@ def telegram_webhook():
             except: pass
 
             # ======================================================
-            #     SPAM PREVENTION LOGIC (COOLDOWN CHECK)
+            #     SPAM PREVENTION LOGIC & POSTER CHECK
             # ======================================================
-            # DB থেকে আবার ডেটা আনছি (আপডেট হওয়ার পর)
             current_movie = movies.find_one({"_id": movie_id})
             last_notified = current_movie.get("last_notified")
             
@@ -352,12 +349,11 @@ def telegram_webhook():
                     is_spamming = True
                     print(f"🚫 Notification Skipped for {final_title} (Spam Protection Active)")
 
-            # --- PUBLIC CHANNEL NOTIFICATION ---
-            # শর্ত: 
-            # ১. পাবলিক চ্যানেল আইডি থাকতে হবে
-            # ২. should_notify সত্য হতে হবে
-            # ৩. পোস্টার থাকতে হবে (tmdb_data.get('poster'))
-            # ৪. স্প্যামিং করা যাবে না (not is_spamming)
+            # নোটিফিকেশন তখনই যাবে যদি:
+            # ১. পাবলিক চ্যানেল সেট করা থাকে
+            # ২. should_notify সত্য হয়
+            # ৩. পোস্টার থাকে (tmdb_data.get('poster'))
+            # ৪. স্প্যামিং না হয় (not is_spamming)
             if PUBLIC_CHANNEL_ID and should_notify and tmdb_data.get('poster') and not is_spamming:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
                 if episode_label: notify_caption += f"📌 {escape_markdown(episode_label)}\n"
@@ -385,7 +381,7 @@ def telegram_webhook():
                 try: 
                     resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
                     if resp.json().get('ok'):
-                        # সফল হলে last_notified টাইম আপডেট করব
+                        # সফল হলে last_notified টাইম আপডেট হবে
                         movies.update_one({"_id": movie_id}, {"$set": {"last_notified": datetime.utcnow()}})
                 except: pass
 
@@ -405,7 +401,6 @@ def telegram_webhook():
                 if movie:
                     target_file = next((f for f in movie['files'] if f['unique_code'] == code), None)
                     if target_file:
-                        # ক্যাপশনে ১০ মিনিটের ওয়ার্নিং অ্যাড করা হয়েছে
                         caption = f"🎬 *{escape_markdown(movie['title'])}*\n"
                         if target_file.get('episode_label'):
                             caption += f"📌 {escape_markdown(target_file['episode_label'])}\n"
@@ -430,14 +425,12 @@ def telegram_webhook():
                         if target_file['file_type'] == 'video': payload['video'] = target_file['file_id']
                         else: payload['document'] = target_file['file_id']
                         
-                        # --- ফাইল সেন্ড এবং অটো ডিলিট প্রসেস ---
                         try:
                             response = requests.post(f"{TELEGRAM_API_URL}/{method}", json=payload)
                             resp_data = response.json()
                             
                             if resp_data.get('ok'):
                                 sent_msg_id = resp_data['result']['message_id']
-                                # আলাদা থ্রেডে ১০ মিনিট অপেক্ষার জন্য পাঠানো হচ্ছে
                                 threading.Thread(target=delete_message_later, args=(chat_id, sent_msg_id, DELETE_TIMEOUT)).start()
                         except Exception as e:
                             print(f"Error sending file: {e}")
@@ -542,17 +535,9 @@ index_template = """
 </nav>
 
 <div class="category-container">
-    <!-- Updated Links: Using query params (?type=...) directly -->
     <a href="/" class="cat-btn {{ 'active' if not selected_cat and not request.args.get('type') else '' }}">🏠 Home</a>
-    
-    <a href="/?type=movie" class="cat-btn {{ 'active' if request.args.get('type') == 'movie' else '' }}">
-        <i class="fas fa-film"></i> All Movies
-    </a>
-    
-    <a href="/?type=series" class="cat-btn {{ 'active' if request.args.get('type') == 'series' else '' }}">
-        <i class="fas fa-tv"></i> All Web Series
-    </a>
-
+    <a href="/?type=movie" class="cat-btn {{ 'active' if request.args.get('type') == 'movie' else '' }}"><i class="fas fa-film"></i> All Movies</a>
+    <a href="/?type=series" class="cat-btn {{ 'active' if request.args.get('type') == 'series' else '' }}"><i class="fas fa-tv"></i> All Web Series</a>
     {% for cat in categories %}
     <a href="/?cat={{ cat.name }}" class="cat-btn {{ 'active' if selected_cat == cat.name else '' }}">
         {% if 'Bangla' in cat.name %}🇧🇩{% elif 'Hindi' in cat.name %}🇮🇳{% elif 'English' in cat.name %}🇺🇸{% else %}<i class="fas fa-tag"></i>{% endif %} {{ cat.name }}
@@ -619,7 +604,6 @@ index_template = """
         {% endfor %}
     </div>
 
-    <!-- Pagination maintains type filters -->
     <div class="pagination">
         {% if page > 1 %}
         <a href="/?page={{ page-1 }}&type={{ request.args.get('type') or '' }}&cat={{ selected_cat or '' }}&q={{ query or '' }}" class="page-btn">Previous</a>
@@ -755,7 +739,6 @@ detail_template = """
     <div style="height: 20px;"></div>
     <p class="overview">{{ movie.overview }}</p>
 
-    <!-- Trailer Section -->
     {% if movie.trailer %}
     <div style="margin-bottom: 25px; padding: 0 5px;">
         <div class="section-head"><i class="fab fa-youtube"></i> Watch Trailer</div>
@@ -766,7 +749,6 @@ detail_template = """
     </div>
     {% endif %}
 
-    <!-- Cast Section -->
     {% if movie.cast %}
     <div style="margin-bottom: 25px; padding: 0 5px;">
         <div class="section-head"><i class="fas fa-users"></i> Top Cast</div>
@@ -1287,24 +1269,79 @@ def delete_cat(cat_id):
 def admin_edit_movie(movie_id):
     if not check_auth(): return Response('Login Required', 401)
     
+    movie = movies.find_one({"_id": ObjectId(movie_id)})
+    
     if request.method == 'POST':
+        # ১. ফর্ম থেকে ডাটা নেওয়া
+        new_poster = request.form.get("poster")
         update_data = {
             "title": request.form.get("title"),
-            "category": request.form.get("category"), # ক্যাটাগরি আপডেট
+            "category": request.form.get("category"),
             "language": request.form.get("language"),
             "overview": request.form.get("overview"),
-            "poster": request.form.get("poster"),
+            "poster": new_poster,
             "backdrop": request.form.get("backdrop"),
             "release_date": request.form.get("release_date"),
             "vote_average": request.form.get("vote_average"),
-            "type": request.form.get("type"), # টাইপ আপডেট (Movie/Series)
+            "type": request.form.get("type"),
             "updated_at": datetime.utcnow()
         }
+        
+        # ২. ডাটাবেস আপডেট করা
         movies.update_one({"_id": ObjectId(movie_id)}, {"$set": update_data})
+        
+        # ========================================================
+        # 🔔 LATE NOTIFICATION LOGIC (যদি আগে মিস হয়ে থাকে)
+        # ========================================================
+        # যদি আগে নোটিফিকেশন না গিয়ে থাকে (last_notified নেই) এবং এখন পোস্টার দেওয়া হয়েছে
+        if not movie.get('last_notified') and new_poster and PUBLIC_CHANNEL_ID:
+            
+            # লেটেস্ট ফাইলটি বের করা (ক্যাপশনের জন্য)
+            latest_file = movie.get('files', [])[-1] if movie.get('files') else None
+            
+            if latest_file:
+                # ক্যাপশন তৈরি
+                caption = f"🎬 *{escape_markdown(update_data['title'])}*\n"
+                if latest_file.get('episode_label'): 
+                    caption += f"📌 {escape_markdown(latest_file['episode_label'])}\n"
+                
+                caption += f"\n⭐ Rating: {update_data.get('vote_average', 'N/A')}\n"
+                caption += f"📅 Year: {(update_data.get('release_date') or 'N/A')[:4]}\n"
+                caption += f"🔊 Language: {update_data.get('language')}\n"
+                caption += f"💿 Quality: {latest_file.get('quality')}\n"
+                caption += f"📦 Size: {latest_file.get('size')}\n\n"
+                
+                home_link = WEBSITE_URL.rstrip('/')
+                caption += f"🔗 *Download Now:* [Click Here]({home_link})"
+
+                # বাটন
+                pub_keyboard = [
+                    [{"text": "📥 Download / Watch Online", "url": home_link}],
+                    [{"text": "📢 Join Our Channel", "url": f"https://t.me/{BOT_USERNAME}"}] 
+                    # বি:দ্র: এখানে ম্যানুয়ালি আপনার চ্যানেল লিংক বা বট লিংক ব্যবহার করতে পারেন
+                ]
+
+                # টেলিগ্রামে পাঠানো
+                notify_payload = {
+                    'chat_id': PUBLIC_CHANNEL_ID,
+                    'parse_mode': 'Markdown',
+                    'reply_markup': json.dumps({"inline_keyboard": pub_keyboard}),
+                    'photo': new_poster,
+                    'caption': caption
+                }
+                
+                try:
+                    resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
+                    if resp.json().get('ok'):
+                        # সফল হলে টাইম আপডেট করে দাও যাতে বারবার না যায়
+                        movies.update_one({"_id": ObjectId(movie_id)}, {"$set": {"last_notified": datetime.utcnow()}})
+                        print(f"✅ Late notification sent for {update_data['title']}")
+                except Exception as e:
+                    print(f"❌ Failed to send late notification: {e}")
+
         return redirect(url_for('admin_home'))
         
-    movie = movies.find_one({"_id": ObjectId(movie_id)})
-    cat_list = list(categories.find()) # এডিটের জন্য ক্যাটাগরি লিস্ট
+    cat_list = list(categories.find())
     
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_edit)
     return render_template_string(full_html, movie=movie, categories=cat_list, active='dashboard')
