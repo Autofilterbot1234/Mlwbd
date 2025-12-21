@@ -32,6 +32,10 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # অটো ডিলিট সময় (সেকেন্ডে) - ১০ মিনিট = ৬০০ সেকেন্ড
 DELETE_TIMEOUT = 600 
 
+# নোটিফিকেশন কুলডাউন (সেকেন্ডে) - ৩০ মিনিট = ১৮০০ সেকেন্ড
+# অর্থাৎ একবার নোটিফিকেশন যাওয়ার পর ৩০ মিনিটের মধ্যে একই মুভি/সিরিজের জন্য আর নোটিফিকেশন যাবে না
+NOTIFICATION_COOLDOWN = 1800 
+
 # এডমিন ক্রেডেনশিয়াল
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "admin")
@@ -279,7 +283,7 @@ def telegram_webhook():
 
         existing_movie = movies.find_one({"title": final_title})
         movie_id = None
-        should_notify = False
+        should_notify = False # ডিফল্টভাবে ফলস
 
         if existing_movie:
             is_duplicate = False
@@ -293,15 +297,7 @@ def telegram_webhook():
                     {"$push": {"files": file_obj}, "$set": {"updated_at": datetime.utcnow()}}
                 )
                 movie_id = existing_movie['_id']
-                if content_type == "series" and episode_label:
-                    has_ep = False
-                    for f in existing_movie.get('files', []):
-                        if f.get('episode_label') == episode_label and f.get('quality') == quality and f != file_obj:
-                            has_ep = True
-                            break
-                    should_notify = not has_ep
-                else:
-                    should_notify = False
+                should_notify = True # ফাইল নতুন হলে নোটিফিকেশন দেওয়ার চেষ্টা করব
         else:
             should_notify = True
             new_movie = {
@@ -342,9 +338,27 @@ def telegram_webhook():
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # --- PUBLIC CHANNEL NOTIFICATION (ONLY IF POSTER EXISTS) ---
-            # এখানে 'and tmdb_data.get('poster')' যোগ করা হয়েছে
-            if PUBLIC_CHANNEL_ID and should_notify and tmdb_data.get('poster'):
+            # ======================================================
+            #     SPAM PREVENTION LOGIC (COOLDOWN CHECK)
+            # ======================================================
+            # DB থেকে আবার ডেটা আনছি (আপডেট হওয়ার পর)
+            current_movie = movies.find_one({"_id": movie_id})
+            last_notified = current_movie.get("last_notified")
+            
+            is_spamming = False
+            if last_notified:
+                time_diff = (datetime.utcnow() - last_notified).total_seconds()
+                if time_diff < NOTIFICATION_COOLDOWN:
+                    is_spamming = True
+                    print(f"🚫 Notification Skipped for {final_title} (Spam Protection Active)")
+
+            # --- PUBLIC CHANNEL NOTIFICATION ---
+            # শর্ত: 
+            # ১. পাবলিক চ্যানেল আইডি থাকতে হবে
+            # ২. should_notify সত্য হতে হবে
+            # ৩. পোস্টার থাকতে হবে (tmdb_data.get('poster'))
+            # ৪. স্প্যামিং করা যাবে না (not is_spamming)
+            if PUBLIC_CHANNEL_ID and should_notify and tmdb_data.get('poster') and not is_spamming:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
                 if episode_label: notify_caption += f"📌 {escape_markdown(episode_label)}\n"
                 
@@ -368,8 +382,11 @@ def telegram_webhook():
                     'caption': notify_caption
                 }
 
-                # শুধুমাত্র sendPhoto ব্যবহার হবে, sendMessage নয়
-                try: requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
+                try: 
+                    resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
+                    if resp.json().get('ok'):
+                        # সফল হলে last_notified টাইম আপডেট করব
+                        movies.update_one({"_id": movie_id}, {"$set": {"last_notified": datetime.utcnow()}})
                 except: pass
 
         return jsonify({'status': 'success'})
