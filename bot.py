@@ -881,51 +881,6 @@ admin_base = """
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    function searchTMDB() {
-        const query = document.getElementById('tmdbQuery').value;
-        const resultDiv = document.getElementById('tmdbResults');
-        if(!query) return;
-        
-        resultDiv.innerHTML = '<div class="text-info">Searching...</div>';
-        
-        fetch('/admin/api/tmdb?q=' + encodeURIComponent(query))
-        .then(r => r.json())
-        .then(data => {
-            if(data.error) {
-                resultDiv.innerHTML = '<div class="text-danger">'+data.error+'</div>';
-                return;
-            }
-            let html = '<div class="list-group mt-2">';
-            data.results.forEach(item => {
-                let title = item.title || item.name;
-                let date = item.release_date || item.first_air_date || 'N/A';
-                let itemStr = JSON.stringify(item).replace(/'/g, "&#39;");
-                
-                html += `<button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-3" onclick='fillForm(${itemStr})'>
-                    <img src="https://image.tmdb.org/t/p/w92${item.poster_path}" style="width:40px; border-radius:4px;">
-                    <div>
-                        <div class="fw-bold">${title}</div>
-                        <small class="text-muted">${date.substring(0,4)}</small>
-                    </div>
-                </button>`;
-            });
-            html += '</div>';
-            resultDiv.innerHTML = html;
-        });
-    }
-
-    function fillForm(data) {
-        document.querySelector('input[name="title"]').value = data.title || data.name;
-        document.querySelector('textarea[name="overview"]').value = data.overview;
-        document.querySelector('input[name="poster"]').value = 'https://image.tmdb.org/t/p/w500' + data.poster_path;
-        document.querySelector('input[name="backdrop"]').value = 'https://image.tmdb.org/t/p/w1280' + data.backdrop_path;
-        document.querySelector('input[name="release_date"]').value = data.release_date || data.first_air_date;
-        document.querySelector('input[name="vote_average"]').value = data.vote_average;
-        document.querySelector('.poster-preview').src = 'https://image.tmdb.org/t/p/w500' + data.poster_path;
-        document.getElementById('tmdbResults').innerHTML = '<div class="text-success">Data Applied! Click Update to Save.</div>';
-    }
-</script>
 </body>
 </html>
 """
@@ -996,6 +951,7 @@ admin_categories = """
 </div>
 """
 
+# --- UPDATED ADMIN EDIT TEMPLATE WITH IMDB/ID SUPPORT ---
 admin_edit = """
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -1004,15 +960,32 @@ admin_edit = """
     </div>
 
     <div class="row">
-        <!-- TMDB Search Column -->
+        <!-- TMDB Search & ID Column -->
         <div class="col-md-4 mb-4">
-            <div class="card p-3">
-                <h5>Fetch Data from TMDB</h5>
-                <div class="input-group mb-3">
-                    <input type="text" id="tmdbQuery" class="form-control" placeholder="Enter Name..." value="{{ movie.title }}">
-                    <button class="btn btn-warning" type="button" onclick="searchTMDB()">Search</button>
+            
+            <!-- Option 1: Search by Name -->
+            <div class="card p-3 mb-3">
+                <h6 class="text-warning"><i class="fas fa-search"></i> Search by Name</h6>
+                <div class="input-group mb-2">
+                    <input type="text" id="tmdbQuery" class="form-control form-control-sm" placeholder="Movie Name..." value="{{ movie.title }}">
+                    <button class="btn btn-primary btn-sm" type="button" onclick="searchTMDB('name')">Search</button>
                 </div>
-                <div id="tmdbResults" style="max-height: 400px; overflow-y: auto;"></div>
+            </div>
+
+            <!-- Option 2: Import by ID/Link -->
+            <div class="card p-3 mb-3 border-info">
+                <h6 class="text-info"><i class="fas fa-link"></i> Import by ID or Link</h6>
+                <small class="text-muted mb-2" style="font-size:11px;">Supports: IMDB Link, IMDB ID (tt...), TMDB ID</small>
+                <div class="input-group">
+                    <input type="text" id="tmdbIdInput" class="form-control form-control-sm" placeholder="ex: tt12345 or 550">
+                    <button class="btn btn-info btn-sm text-white" type="button" onclick="searchTMDB('id')">Fetch</button>
+                </div>
+            </div>
+
+            <!-- Results Area -->
+            <div class="card p-3">
+                <h6>Results:</h6>
+                <div id="tmdbResults" style="max-height: 300px; overflow-y: auto;"></div>
             </div>
             
             <div class="card p-3 mt-3 text-center">
@@ -1033,7 +1006,6 @@ admin_edit = """
                     </div>
 
                     <div class="row">
-                        <!-- CATEGORY SELECT -->
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Category</label>
                             <select name="category" class="form-select">
@@ -1044,7 +1016,6 @@ admin_edit = """
                             </select>
                         </div>
 
-                        <!-- TYPE SELECT (ADDED THIS) -->
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Content Type</label>
                             <select name="type" class="form-select" style="background-color: #2c3036; color: white; border-color: #444;">
@@ -1091,6 +1062,94 @@ admin_edit = """
         </div>
     </div>
 </div>
+
+<script>
+    function searchTMDB(type) {
+        let query = '';
+        if (type === 'name') {
+            query = document.getElementById('tmdbQuery').value;
+        } else {
+            query = document.getElementById('tmdbIdInput').value;
+        }
+
+        const resultDiv = document.getElementById('tmdbResults');
+        if(!query) {
+            resultDiv.innerHTML = '<div class="text-warning">Please enter a name or ID</div>';
+            return;
+        }
+        
+        resultDiv.innerHTML = '<div class="text-info"><i class="fas fa-spinner fa-spin"></i> Fetching...</div>';
+        
+        fetch('/admin/api/tmdb?q=' + encodeURIComponent(query))
+        .then(r => r.json())
+        .then(data => {
+            if(data.error) {
+                resultDiv.innerHTML = '<div class="text-danger small">'+data.error+'</div>';
+                return;
+            }
+            if(!data.results || data.results.length === 0) {
+                 resultDiv.innerHTML = '<div class="text-danger small">No results found.</div>';
+                 return;
+            }
+
+            let html = '<div class="list-group mt-2">';
+            data.results.forEach(item => {
+                let title = item.title || item.name;
+                let date = item.release_date || item.first_air_date || 'N/A';
+                
+                // TMDB ডেটা ক্লিন করা (single quote issue fix)
+                let cleanItem = JSON.stringify(item).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+                
+                let poster = item.poster_path ? 'https://image.tmdb.org/t/p/w92' + item.poster_path : 'https://via.placeholder.com/92x138?text=No+Img';
+
+                html += `<button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2 p-2" onclick='fillForm(${cleanItem})'>
+                    <img src="${poster}" style="width:40px; height:60px; object-fit:cover; border-radius:4px;">
+                    <div style="overflow:hidden;">
+                        <div class="fw-bold small text-truncate">${title}</div>
+                        <small class="text-muted" style="font-size:10px;">${date.substring(0,4)} • ${item.media_type || 'movie'}</small>
+                    </div>
+                </button>`;
+            });
+            html += '</div>';
+            resultDiv.innerHTML = html;
+        });
+    }
+
+    function fillForm(data) {
+        // ফর্ম ফিল্ডগুলো সিলেক্ট করা
+        document.querySelector('input[name="title"]').value = data.title || data.name;
+        document.querySelector('textarea[name="overview"]').value = data.overview || '';
+        
+        if(data.poster_path) {
+            let pUrl = 'https://image.tmdb.org/t/p/w500' + data.poster_path;
+            document.querySelector('input[name="poster"]').value = pUrl;
+            document.querySelector('.poster-preview').src = pUrl;
+        }
+        
+        if(data.backdrop_path) {
+            document.querySelector('input[name="backdrop"]').value = 'https://image.tmdb.org/t/p/w1280' + data.backdrop_path;
+        }
+        
+        document.querySelector('input[name="release_date"]').value = data.release_date || data.first_air_date || '';
+        document.querySelector('input[name="vote_average"]').value = data.vote_average || '';
+        
+        // টাইপ অটো সিলেক্ট করার চেষ্টা (যদি API থেকে আসে)
+        if(data.media_type) {
+            let typeSelect = document.querySelector('select[name="type"]');
+            if(data.media_type === 'tv') typeSelect.value = 'series';
+            else typeSelect.value = 'movie';
+        }
+
+        // অরিজিনাল ল্যাঙ্গুয়েজ সেট করা
+        if(data.original_language) {
+             let langMap = {'en': 'English', 'hi': 'Hindi', 'bn': 'Bengali', 'ko': 'Korean', 'ja': 'Japanese', 'ta': 'Tamil', 'te': 'Telugu'};
+             let fullLang = langMap[data.original_language] || data.original_language.toUpperCase();
+             document.querySelector('input[name="language"]').value = fullLang;
+        }
+
+        document.getElementById('tmdbResults').innerHTML = '<div class="alert alert-success py-1 small mt-2">Data Applied! Click Update below.</div>';
+    }
+</script>
 """
 
 admin_settings = """
@@ -1264,13 +1323,53 @@ def admin_settings_page():
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_settings)
     return render_template_string(full_html, settings=curr_settings, active='settings')
 
-# API for Admin Panel
+# --- Updated TMDB API Route for Admin ---
 @app.route('/admin/api/tmdb')
 def api_tmdb_search():
     if not check_auth(): return jsonify({'error': 'Unauthorized'}), 401
-    query = request.args.get('q')
+    query = request.args.get('q', '').strip()
     if not query or not TMDB_API_KEY: return jsonify({'error': 'No query or API key'})
     
+    # ১. যদি IMDB ID অথবা লিংক হয় (যেমন: tt1234567 বা imdb.com/title/tt...)
+    imdb_match = re.search(r'(tt\d+)', query)
+    if imdb_match:
+        imdb_id = imdb_match.group(1)
+        url = f"https://api.themoviedb.org/3/find/{imdb_id}?api_key={TMDB_API_KEY}&external_source=imdb_id"
+        try:
+            data = requests.get(url).json()
+            # Movie এবং TV রেজাল্ট চেক করা
+            results = data.get('movie_results', []) + data.get('tv_results', [])
+            if results: 
+                return jsonify({'results': results})
+            return jsonify({'error': 'No results found for this IMDB ID'})
+        except Exception as e:
+            return jsonify({'error': f'IMDB Fetch Failed: {str(e)}'})
+
+    # ২. যদি শুধু সংখ্যা হয় (TMDB ID)
+    if query.isdigit():
+        tmdb_id = query
+        try:
+            # প্রথমে মুভি হিসেবে চেক করা
+            url_movie = f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}"
+            resp = requests.get(url_movie)
+            if resp.status_code == 200:
+                data = resp.json()
+                data['media_type'] = 'movie' # ম্যানুয়ালি টাইপ সেট
+                return jsonify({'results': [data]})
+            
+            # না পেলে সিরিজ হিসেবে চেক করা
+            url_tv = f"https://api.themoviedb.org/3/tv/{tmdb_id}?api_key={TMDB_API_KEY}"
+            resp = requests.get(url_tv)
+            if resp.status_code == 200:
+                data = resp.json()
+                data['media_type'] = 'tv' # ম্যানুয়ালি টাইপ সেট
+                return jsonify({'results': [data]})
+                
+            return jsonify({'error': 'Invalid TMDB ID (Not found in Movie or TV)'})
+        except:
+            return jsonify({'error': 'TMDB ID Fetch Failed'})
+
+    # ৩. সাধারণ নাম দিয়ে সার্চ (আগের লজিক)
     url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={requests.utils.quote(query)}"
     try:
         data = requests.get(url).json()
