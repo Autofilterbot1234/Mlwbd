@@ -951,7 +951,7 @@ admin_categories = """
 </div>
 """
 
-# --- UPDATED ADMIN EDIT TEMPLATE WITH IMDB/ID SUPPORT ---
+# --- ULTIMATE ADMIN EDIT TEMPLATE (Auto-Import) ---
 admin_edit = """
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -963,45 +963,38 @@ admin_edit = """
         <!-- TMDB Search & ID Column -->
         <div class="col-md-4 mb-4">
             
-            <!-- Option 1: Search by Name -->
-            <div class="card p-3 mb-3">
-                <h6 class="text-warning"><i class="fas fa-search"></i> Search by Name</h6>
-                <div class="input-group mb-2">
-                    <input type="text" id="tmdbQuery" class="form-control form-control-sm" placeholder="Movie Name..." value="{{ movie.title }}">
-                    <button class="btn btn-primary btn-sm" type="button" onclick="searchTMDB('name')">Search</button>
-                </div>
-            </div>
-
-            <!-- Option 2: Import by ID/Link -->
-            <div class="card p-3 mb-3 border-info">
-                <h6 class="text-info"><i class="fas fa-link"></i> Import by ID or Link</h6>
-                <small class="text-muted mb-2" style="font-size:11px;">Supports: IMDB Link, IMDB ID (tt...), TMDB ID</small>
+            <!-- Combined Smart Input Box -->
+            <div class="card p-3 mb-3 border-primary shadow-sm">
+                <h6 class="text-primary"><i class="fas fa-magic"></i> Auto Import</h6>
+                <div class="form-text mb-2">Paste ANY Link (IMDb/TMDB) or Name here:</div>
                 <div class="input-group">
-                    <input type="text" id="tmdbIdInput" class="form-control form-control-sm" placeholder="ex: tt12345 or 550">
-                    <button class="btn btn-info btn-sm text-white" type="button" onclick="searchTMDB('id')">Fetch</button>
+                    <input type="text" id="smartInput" class="form-control" placeholder="Paste Link or Type Name..." value="{{ movie.title }}">
+                    <button class="btn btn-primary" type="button" onclick="smartFetch()"><i class="fas fa-search"></i> Fetch</button>
                 </div>
             </div>
 
             <!-- Results Area -->
             <div class="card p-3">
-                <h6>Results:</h6>
-                <div id="tmdbResults" style="max-height: 300px; overflow-y: auto;"></div>
+                <h6 class="border-bottom pb-2">Found Matches:</h6>
+                <div id="tmdbResults" style="max-height: 400px; overflow-y: auto; min-height: 50px;">
+                    <div class="text-muted small text-center mt-3">Results will appear here...</div>
+                </div>
             </div>
             
             <div class="card p-3 mt-3 text-center">
-                <label class="form-label">Current Poster</label><br>
-                <img src="{{ movie.poster }}" class="poster-preview">
+                <label class="form-label text-muted">Current Poster</label><br>
+                <img src="{{ movie.poster }}" class="poster-preview img-thumbnail" style="max-height: 200px;">
             </div>
         </div>
 
         <!-- Edit Form Column -->
         <div class="col-md-8">
-            <div class="card p-4">
+            <div class="card p-4 shadow-sm">
                 <form method="POST">
                     <div class="row">
                         <div class="col-md-12 mb-3">
-                            <label class="form-label">Title</label>
-                            <input type="text" name="title" class="form-control" value="{{ movie.title }}" required>
+                            <label class="form-label fw-bold">Title</label>
+                            <input type="text" name="title" class="form-control form-control-lg" value="{{ movie.title }}" required>
                         </div>
                     </div>
 
@@ -1018,7 +1011,7 @@ admin_edit = """
 
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Content Type</label>
-                            <select name="type" class="form-select" style="background-color: #2c3036; color: white; border-color: #444;">
+                            <select name="type" class="form-select bg-dark text-white">
                                 <option value="movie" {{ 'selected' if movie.type == 'movie' else '' }}>Movie</option>
                                 <option value="series" {{ 'selected' if movie.type == 'series' else '' }}>Web Series</option>
                             </select>
@@ -1027,7 +1020,7 @@ admin_edit = """
 
                     <div class="mb-3">
                         <label class="form-label">Overview / Story</label>
-                        <textarea name="overview" class="form-control" rows="4">{{ movie.overview }}</textarea>
+                        <textarea name="overview" class="form-control" rows="5">{{ movie.overview }}</textarea>
                     </div>
 
                     <div class="row">
@@ -1056,7 +1049,7 @@ admin_edit = """
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100">Update Details</button>
+                    <button type="submit" class="btn btn-success btn-lg w-100"><i class="fas fa-save"></i> Update Details</button>
                 </form>
             </div>
         </div>
@@ -1064,49 +1057,48 @@ admin_edit = """
 </div>
 
 <script>
-    function searchTMDB(type) {
-        let query = '';
-        if (type === 'name') {
-            query = document.getElementById('tmdbQuery').value;
-        } else {
-            query = document.getElementById('tmdbIdInput').value;
-        }
-
+    function smartFetch() {
+        let query = document.getElementById('smartInput').value.trim();
         const resultDiv = document.getElementById('tmdbResults');
+        
         if(!query) {
-            resultDiv.innerHTML = '<div class="text-warning">Please enter a name or ID</div>';
+            resultDiv.innerHTML = '<div class="text-warning text-center">Please paste a link or type a name.</div>';
             return;
         }
         
-        resultDiv.innerHTML = '<div class="text-info"><i class="fas fa-spinner fa-spin"></i> Fetching...</div>';
+        resultDiv.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary" role="status"></div><br>Searching...</div>';
         
         fetch('/admin/api/tmdb?q=' + encodeURIComponent(query))
         .then(r => r.json())
         .then(data => {
             if(data.error) {
-                resultDiv.innerHTML = '<div class="text-danger small">'+data.error+'</div>';
+                resultDiv.innerHTML = '<div class="alert alert-danger small">'+data.error+'</div>';
                 return;
             }
             if(!data.results || data.results.length === 0) {
-                 resultDiv.innerHTML = '<div class="text-danger small">No results found.</div>';
+                 resultDiv.innerHTML = '<div class="alert alert-warning small">No results found. Try using TMDB Link.</div>';
                  return;
             }
 
-            let html = '<div class="list-group mt-2">';
+            // Auto-Click if only 1 result matches perfectly (Optional enhancement)
+            let html = '<div class="list-group list-group-flush">';
             data.results.forEach(item => {
                 let title = item.title || item.name;
                 let date = item.release_date || item.first_air_date || 'N/A';
-                
-                // TMDB ডেটা ক্লিন করা (single quote issue fix)
-                let cleanItem = JSON.stringify(item).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
-                
+                let type = item.media_type || 'movie';
                 let poster = item.poster_path ? 'https://image.tmdb.org/t/p/w92' + item.poster_path : 'https://via.placeholder.com/92x138?text=No+Img';
+                
+                // Secure JSON string
+                let cleanItem = JSON.stringify(item).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
 
                 html += `<button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2 p-2" onclick='fillForm(${cleanItem})'>
-                    <img src="${poster}" style="width:40px; height:60px; object-fit:cover; border-radius:4px;">
-                    <div style="overflow:hidden;">
-                        <div class="fw-bold small text-truncate">${title}</div>
-                        <small class="text-muted" style="font-size:10px;">${date.substring(0,4)} • ${item.media_type || 'movie'}</small>
+                    <img src="${poster}" style="width:45px; height:65px; object-fit:cover; border-radius:4px;">
+                    <div style="overflow:hidden; width:100%;">
+                        <div class="fw-bold text-truncate">${title}</div>
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>${date.substring(0,4)}</span>
+                            <span class="badge bg-secondary">${type.toUpperCase()}</span>
+                        </div>
                     </div>
                 </button>`;
             });
@@ -1116,38 +1108,40 @@ admin_edit = """
     }
 
     function fillForm(data) {
-        // ফর্ম ফিল্ডগুলো সিলেক্ট করা
+        // Basic Fields
         document.querySelector('input[name="title"]').value = data.title || data.name;
         document.querySelector('textarea[name="overview"]').value = data.overview || '';
-        
+        document.querySelector('input[name="release_date"]').value = data.release_date || data.first_air_date || '';
+        document.querySelector('input[name="vote_average"]').value = data.vote_average || '';
+
+        // Images
         if(data.poster_path) {
             let pUrl = 'https://image.tmdb.org/t/p/w500' + data.poster_path;
             document.querySelector('input[name="poster"]').value = pUrl;
             document.querySelector('.poster-preview').src = pUrl;
         }
-        
         if(data.backdrop_path) {
             document.querySelector('input[name="backdrop"]').value = 'https://image.tmdb.org/t/p/w1280' + data.backdrop_path;
         }
-        
-        document.querySelector('input[name="release_date"]').value = data.release_date || data.first_air_date || '';
-        document.querySelector('input[name="vote_average"]').value = data.vote_average || '';
-        
-        // টাইপ অটো সিলেক্ট করার চেষ্টা (যদি API থেকে আসে)
-        if(data.media_type) {
-            let typeSelect = document.querySelector('select[name="type"]');
-            if(data.media_type === 'tv') typeSelect.value = 'series';
-            else typeSelect.value = 'movie';
+
+        // Auto Select Type (Movie/Series)
+        let typeSelect = document.querySelector('select[name="type"]');
+        if(data.media_type === 'tv') {
+            typeSelect.value = 'series';
+        } else {
+            typeSelect.value = 'movie';
         }
 
-        // অরিজিনাল ল্যাঙ্গুয়েজ সেট করা
+        // Language Map
         if(data.original_language) {
-             let langMap = {'en': 'English', 'hi': 'Hindi', 'bn': 'Bengali', 'ko': 'Korean', 'ja': 'Japanese', 'ta': 'Tamil', 'te': 'Telugu'};
+             let langMap = {'en': 'English', 'hi': 'Hindi', 'bn': 'Bengali', 'ko': 'Korean', 'ja': 'Japanese', 'ta': 'Tamil', 'te': 'Telugu', 'es': 'Spanish', 'fr': 'French'};
              let fullLang = langMap[data.original_language] || data.original_language.toUpperCase();
              document.querySelector('input[name="language"]').value = fullLang;
         }
 
-        document.getElementById('tmdbResults').innerHTML = '<div class="alert alert-success py-1 small mt-2">Data Applied! Click Update below.</div>';
+        // Show Success
+        const resDiv = document.getElementById('tmdbResults');
+        resDiv.innerHTML = '<div class="alert alert-success mt-2 text-center"><i class="fas fa-check-circle"></i> Data Applied!<br>Please check fields and click <b>Update</b>.</div>';
     }
 </script>
 """
@@ -1323,59 +1317,81 @@ def admin_settings_page():
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_settings)
     return render_template_string(full_html, settings=curr_settings, active='settings')
 
-# --- Updated TMDB API Route for Admin ---
+# --- ULTIMATE TMDB API ROUTE (Auto Link Detection) ---
 @app.route('/admin/api/tmdb')
 def api_tmdb_search():
     if not check_auth(): return jsonify({'error': 'Unauthorized'}), 401
     query = request.args.get('q', '').strip()
-    if not query or not TMDB_API_KEY: return jsonify({'error': 'No query or API key'})
-    
-    # ১. যদি IMDB ID অথবা লিংক হয় (যেমন: tt1234567 বা imdb.com/title/tt...)
+    if not query or not TMDB_API_KEY: return jsonify({'error': 'No query provided'})
+
+    # 1. Check for TMDB URL (e.g., themoviedb.org/movie/12345)
+    tmdb_url_match = re.search(r'themoviedb\.org/(movie|tv)/(\d+)', query)
+    if tmdb_url_match:
+        m_type = tmdb_url_match.group(1) # 'movie' or 'tv'
+        m_id = tmdb_url_match.group(2)
+        
+        url = f"https://api.themoviedb.org/3/{m_type}/{m_id}?api_key={TMDB_API_KEY}"
+        try:
+            resp = requests.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                data['media_type'] = m_type # Force type from URL
+                return jsonify({'results': [data]})
+        except:
+            pass # Failed, move to next logic
+
+    # 2. Check for IMDb ID inside ANY Text/Link (e.g., ...title/tt123/...)
     imdb_match = re.search(r'(tt\d+)', query)
     if imdb_match:
         imdb_id = imdb_match.group(1)
         url = f"https://api.themoviedb.org/3/find/{imdb_id}?api_key={TMDB_API_KEY}&external_source=imdb_id"
         try:
             data = requests.get(url).json()
-            # Movie এবং TV রেজাল্ট চেক করা
-            results = data.get('movie_results', []) + data.get('tv_results', [])
+            results = []
+            if 'movie_results' in data and data['movie_results']: 
+                for item in data['movie_results']: item['media_type'] = 'movie'
+                results.extend(data['movie_results'])
+                
+            if 'tv_results' in data and data['tv_results']:
+                for item in data['tv_results']: item['media_type'] = 'tv'
+                results.extend(data['tv_results'])
+
             if results: 
                 return jsonify({'results': results})
-            return jsonify({'error': 'No results found for this IMDB ID'})
+            else:
+                return jsonify({'error': f'IMDb ID ({imdb_id}) found, but not linked to TMDB yet. Use TMDB Link instead.'})
         except Exception as e:
-            return jsonify({'error': f'IMDB Fetch Failed: {str(e)}'})
+            return jsonify({'error': f'IMDb Lookup Error: {str(e)}'})
 
-    # ২. যদি শুধু সংখ্যা হয় (TMDB ID)
+    # 3. Check for Pure ID (Numbers only)
     if query.isdigit():
         tmdb_id = query
         try:
-            # প্রথমে মুভি হিসেবে চেক করা
+            # Try Movie First
             url_movie = f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}"
             resp = requests.get(url_movie)
             if resp.status_code == 200:
                 data = resp.json()
-                data['media_type'] = 'movie' # ম্যানুয়ালি টাইপ সেট
+                data['media_type'] = 'movie'
                 return jsonify({'results': [data]})
             
-            # না পেলে সিরিজ হিসেবে চেক করা
+            # Try TV Series Second
             url_tv = f"https://api.themoviedb.org/3/tv/{tmdb_id}?api_key={TMDB_API_KEY}"
             resp = requests.get(url_tv)
             if resp.status_code == 200:
                 data = resp.json()
-                data['media_type'] = 'tv' # ম্যানুয়ালি টাইপ সেট
+                data['media_type'] = 'tv'
                 return jsonify({'results': [data]})
-                
-            return jsonify({'error': 'Invalid TMDB ID (Not found in Movie or TV)'})
         except:
-            return jsonify({'error': 'TMDB ID Fetch Failed'})
+            pass
 
-    # ৩. সাধারণ নাম দিয়ে সার্চ (আগের লজিক)
+    # 4. Normal Name Search (Fallback)
     url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={requests.utils.quote(query)}"
     try:
         data = requests.get(url).json()
         return jsonify(data)
     except:
-        return jsonify({'error': 'TMDB Request Failed'})
+        return jsonify({'error': 'Search Failed'})
 
 if __name__ == '__main__':
     if WEBSITE_URL and BOT_TOKEN:
