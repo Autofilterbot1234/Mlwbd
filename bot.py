@@ -288,6 +288,9 @@ def telegram_webhook():
         language = detect_language(raw_input)
         unique_code = str(uuid.uuid4())[:8]
 
+        # Use timezone-aware UTC
+        current_time = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+
         file_obj = {
             "file_id": file_id,
             "unique_code": unique_code,
@@ -296,7 +299,7 @@ def telegram_webhook():
             "episode_label": episode_label,
             "size": f"{file_size_mb:.2f} MB",
             "file_type": file_type,
-            "added_at": datetime.utcnow()
+            "added_at": current_time
         }
 
         existing_movie = movies.find_one({"title": final_title})
@@ -312,7 +315,7 @@ def telegram_webhook():
             if not is_duplicate:
                 movies.update_one(
                     {"_id": existing_movie['_id']},
-                    {"$push": {"files": file_obj}, "$set": {"updated_at": datetime.utcnow()}}
+                    {"$push": {"files": file_obj}, "$set": {"updated_at": current_time}}
                 )
                 movie_id = existing_movie['_id']
                 should_notify = True
@@ -334,8 +337,8 @@ def telegram_webhook():
                 "category": "Uncategorized",
                 "is_adult": is_adult,
                 "files": [file_obj],
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow()
+                "created_at": current_time,
+                "updated_at": current_time
             }
             res = movies.insert_one(new_movie)
             movie_id = res.inserted_id
@@ -359,7 +362,13 @@ def telegram_webhook():
             
             is_spamming = False
             if last_notified:
-                time_diff = (datetime.utcnow() - last_notified).total_seconds()
+                # Handle datetime compatibility
+                now = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+                # Ensure last_notified is timezone aware if now is
+                if hasattr(datetime, 'UTC') and last_notified.tzinfo is None:
+                    last_notified = last_notified.replace(tzinfo=datetime.UTC)
+                
+                time_diff = (now - last_notified).total_seconds()
                 if time_diff < NOTIFICATION_COOLDOWN:
                     is_spamming = True
 
@@ -390,7 +399,8 @@ def telegram_webhook():
                 try: 
                     resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
                     if resp.json().get('ok'):
-                        movies.update_one({"_id": movie_id}, {"$set": {"last_notified": datetime.utcnow()}})
+                        now_utc = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+                        movies.update_one({"_id": movie_id}, {"$set": {"last_notified": now_utc}})
                 except: pass
 
         return jsonify({'status': 'success'})
@@ -701,7 +711,7 @@ index_template = """
 </html>
 """
 
-# --- DETAIL TEMPLATE (Updated with JS for API Shortener) ---
+# --- DETAIL TEMPLATE (Fixed JS for API Shortener) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -920,26 +930,33 @@ detail_template = """
 
 <script>
     async function processLink(btn, originalUrl, apiKey, domain) {
+        // বাটন লোডিং স্টেট
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Please Wait...';
         btn.style.opacity = "0.7";
         btn.disabled = true;
 
         try {
+            // API কল করা হচ্ছে
             const apiUrl = `https://${domain}/api?api=${apiKey}&url=${encodeURIComponent(originalUrl)}`;
             const response = await fetch(apiUrl);
             const data = await response.json();
 
             if (data.status === 'success' && data.shortenedUrl) {
+                // সফল হলে শর্ট লিংকে রিডাইরেক্ট
                 window.location.href = data.shortenedUrl;
             } else {
+                // ফেইল হলে অরিজিনাল লিংকে
+                console.error("API returned error:", data);
                 alert("Shortener Error! Redirecting to original link...");
                 window.location.href = originalUrl;
             }
         } catch (error) {
-            console.error("Shortener Error:", error);
+            console.error("Fetch Error:", error);
+            // কোন এরর হলে অরিজিনাল লিংকে রিডাইরেক্ট
             window.location.href = originalUrl;
         } finally {
+            // যদি পেজ রিডাইরেক্ট না হয়, বাটন ঠিক করা
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.opacity = "1";
@@ -952,6 +969,7 @@ detail_template = """
 </body>
 </html>
 """
+
 # ================================
 #        ADMIN PANEL TEMPLATES
 # ================================
@@ -1269,7 +1287,7 @@ admin_edit = """
 </script>
 """
 
-# --- ADMIN SETTINGS TEMPLATE (Added Shortener & Tutorial Fields) ---
+# --- ADMIN SETTINGS TEMPLATE ---
 admin_settings = """
 <div class="container" style="max-width: 800px;">
     <h3 class="mb-4">Website Settings</h3>
@@ -1287,7 +1305,7 @@ admin_settings = """
                     <label class="form-label">API Key</label>
                     <input type="text" name="shortener_api" class="form-control" placeholder="Paste your API Key here" value="{{ settings.shortener_api or '' }}">
                 </div>
-                <div class="form-text text-warning"><i class="fas fa-info-circle"></i> If you set these, all download links will be automatically converted to Short Links. Clear them to disable.</div>
+                <div class="form-text text-warning"><i class="fas fa-info-circle"></i> If set, buttons will fetch a short link via API. Clear to disable.</div>
             </div>
 
             <div class="mb-4 border-bottom pb-4">
@@ -1408,6 +1426,9 @@ def admin_edit_movie(movie_id):
     
     if request.method == 'POST':
         new_poster = request.form.get("poster")
+        # Use timezone-aware UTC
+        now_utc = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+
         update_data = {
             "title": request.form.get("title"),
             "category": request.form.get("category"),
@@ -1419,7 +1440,7 @@ def admin_edit_movie(movie_id):
             "vote_average": request.form.get("vote_average"),
             "type": request.form.get("type"),
             "is_adult": request.form.get("is_adult") == 'true',
-            "updated_at": datetime.utcnow()
+            "updated_at": now_utc
         }
         
         movies.update_one({"_id": ObjectId(movie_id)}, {"$set": update_data})
@@ -1456,7 +1477,8 @@ def admin_edit_movie(movie_id):
                 try:
                     resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
                     if resp.json().get('ok'):
-                        movies.update_one({"_id": ObjectId(movie_id)}, {"$set": {"last_notified": datetime.utcnow()}})
+                        now_utc = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+                        movies.update_one({"_id": ObjectId(movie_id)}, {"$set": {"last_notified": now_utc}})
                 except Exception as e:
                     print(f"❌ Failed to send late notification: {e}")
 
