@@ -118,6 +118,20 @@ def get_episode_label(filename):
     if season: return f"Season {int(match_s.group(2))}"
     return None
 
+# --- NEW: Adult Content Detector ---
+def is_adult_content(title, genres=[]):
+    """ টাইটেল এবং কিওয়ার্ড চেক করে ১৮+ ডিটেক্ট করে """
+    adult_keywords = ['18+', 'adult', 'uncut', 'erotic', 'hot', 'sex', 'nude', 'romance', 'thriller', 'porn', 'xxx']
+    
+    # টাইটেল চেক
+    for word in adult_keywords:
+        if re.search(r'\b' + word + r'\b', title, re.IGNORECASE):
+            return True
+    
+    # TMDB Adult Flag (যদি থাকে)
+    # জেনার চেক (Optional, ডিফল্টভাবে বন্ধ রাখা হয়েছে যাতে নরমাল মুভি ১৮+ না হয়ে যায়)
+    return False
+
 # --- BACKGROUND DELETE FUNCTION ---
 def delete_message_later(chat_id, message_id, delay):
     """ নির্দিষ্ট সময় পর মেসেজ ডিলিট করার ফাংশন """
@@ -172,6 +186,9 @@ def get_tmdb_details(title, content_type="movie", year=None):
             poster = f"https://image.tmdb.org/t/p/w500{res['poster_path']}" if res.get('poster_path') else None
             backdrop = f"https://image.tmdb.org/t/p/w1280{res['backdrop_path']}" if res.get('backdrop_path') else None
 
+            # TMDB এর নিজস্ব adult flag চেক
+            is_adult_tmdb = res.get("adult", False)
+
             return {
                 "tmdb_id": res.get("id"),
                 "title": res.get("name") if tmdb_type == "tv" else res.get("title"),
@@ -183,7 +200,8 @@ def get_tmdb_details(title, content_type="movie", year=None):
                 "genres": genres,        
                 "runtime": runtime, 
                 "trailer": trailer_key,  
-                "cast": cast_list
+                "cast": cast_list,
+                "adult": is_adult_tmdb # Return flag
             }
     except Exception as e:
         print(f"TMDB Error: {e}")
@@ -260,6 +278,12 @@ def telegram_webhook():
         final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
         
+        # --- Adult Check ---
+        is_adult = tmdb_data.get('adult', False)
+        if not is_adult:
+            is_adult = is_adult_content(final_title)
+        # -------------------
+
         episode_label = get_episode_label(file_name)
         if content_type == "series" and not episode_label:
             clean_part = file_name.replace(search_title, "").replace(".", " ").strip()
@@ -313,6 +337,7 @@ def telegram_webhook():
                 "language": language,
                 "type": content_type,
                 "category": "Uncategorized",
+                "is_adult": is_adult, # Database e Save hobe
                 "files": [file_obj],
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
@@ -477,7 +502,26 @@ index_template = """
         
         .navbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #161616; border-bottom: 1px solid #222; position: sticky; top: 0; z-index: 100; }
         .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
-        .nav-icons { color: #fff; font-size: 18px; }
+        
+        /* --- ADULT TOGGLE STYLE --- */
+        .adult-control { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; background: #222; padding: 5px 10px; border-radius: 20px; border: 1px solid #333; }
+        .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4caf50; transition: .4s; border-radius: 34px; } /* Green (Safe) */
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #E50914; } /* Red (18+) */
+        input:checked + .slider:before { transform: translateX(16px); }
+
+        /* --- BLUR LOGIC --- */
+        /* যখন body তে 'hide-adult' ক্লাস থাকবে (ডিফল্ট) */
+        body.hide-adult .is-adult img { filter: blur(20px); pointer-events: none; }
+        body.hide-adult .is-adult .card-title { opacity: 0.3; filter: blur(3px); }
+        body.hide-adult .is-adult::after { 
+            content: "18+"; position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%); background: #E50914; color: #fff; 
+            padding: 5px 10px; font-weight: bold; font-size: 14px; border-radius: 5px; 
+            pointer-events: none; z-index: 5;
+        }
 
         .category-container { padding: 10px; background: #121212; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
         .cat-btn { background: var(--red-btn); color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #990000; box-shadow: 0 3px 0 #800000; transition: 0.1s; white-space: nowrap; }
@@ -527,11 +571,19 @@ index_template = """
         .ad-container { margin: 15px 0; text-align: center; overflow: hidden; }
     </style>
 </head>
-<body>
+<body class="hide-adult"> <!-- DEFAULT: Hide Adult Content -->
 
 <nav class="navbar">
     <a href="/" class="logo">{{ site_name }}</a>
-    <div class="nav-icons"><i class="fas fa-bell"></i></div>
+    
+    <!-- 18+ ON/OFF Toggle -->
+    <div class="adult-control">
+        <span id="adult-label" style="color:#4caf50;">18+ OFF</span>
+        <label class="switch">
+            <input type="checkbox" id="adultToggle">
+            <span class="slider"></span>
+        </label>
+    </div>
 </nav>
 
 <div class="category-container">
@@ -557,7 +609,7 @@ index_template = """
     <div class="swiper mySwiper">
         <div class="swiper-wrapper">
             {% for slide in slider_movies %}
-            <div class="swiper-slide">
+            <div class="swiper-slide {% if slide.is_adult %}is-adult{% endif %}">
                 <a href="{{ url_for('movie_detail', movie_id=slide._id) }}" style="width:100%; height:100%; position:relative;">
                     <img src="{{ slide.backdrop or slide.poster }}" class="slide-img">
                     <div class="slide-overlay"></div>
@@ -590,7 +642,8 @@ index_template = """
 
     <div class="grid">
         {% for movie in movies %}
-        <a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="card">
+        <!-- Add 'is-adult' class if marked in DB -->
+        <a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="card {% if movie.is_adult %}is-adult{% endif %}">
             <span class="rating-badge">{{ movie.vote_average }}</span>
             <img src="{{ movie.poster or 'https://via.placeholder.com/300x450' }}" class="card-img" loading="lazy">
             <div class="card-overlay">
@@ -631,6 +684,42 @@ index_template = """
         autoplay: { delay: 3500, disableOnInteraction: false },
         pagination: { el: ".swiper-pagination", clickable: true, dynamicBullets: true },
         loop: true
+    });
+
+    // --- 18+ TOGGLE LOGIC ---
+    const toggle = document.getElementById('adultToggle');
+    const label = document.getElementById('adult-label');
+    const body = document.body;
+
+    // Check LocalStorage on Load
+    if (localStorage.getItem('adult_enabled') === 'true') {
+        body.classList.remove('hide-adult');
+        toggle.checked = true;
+        label.innerText = "18+ ON";
+        label.style.color = "#E50914";
+    } else {
+        body.classList.add('hide-adult');
+        toggle.checked = false;
+        label.innerText = "18+ OFF";
+        label.style.color = "#4caf50";
+    }
+
+    toggle.addEventListener('change', function() {
+        if(this.checked) {
+            if(confirm("Are you over 18 years old? This will show adult content.")) {
+                body.classList.remove('hide-adult');
+                localStorage.setItem('adult_enabled', 'true');
+                label.innerText = "18+ ON";
+                label.style.color = "#E50914";
+            } else {
+                this.checked = false;
+            }
+        } else {
+            body.classList.add('hide-adult');
+            localStorage.setItem('adult_enabled', 'false');
+            label.innerText = "18+ OFF";
+            label.style.color = "#4caf50";
+        }
     });
 </script>
 
@@ -737,6 +826,14 @@ detail_template = """
     </div>
     
     <div style="height: 20px;"></div>
+    
+    <!-- 18+ Warning Alert -->
+    {% if movie.is_adult %}
+    <div style="background: #330000; color: #ff9999; padding: 10px; border-radius: 5px; border: 1px solid #990000; font-size: 0.85rem; margin-bottom: 15px; text-align: center;">
+        <i class="fas fa-exclamation-triangle"></i> <b>WARNING:</b> This content contains 18+ Adult material.
+    </div>
+    {% endif %}
+    
     <p class="overview">{{ movie.overview }}</p>
 
     {% if movie.trailer %}
@@ -902,6 +999,7 @@ admin_dashboard = """
                     <div class="card-body p-2 d-flex flex-column h-100">
                         <h6 class="card-title mb-1 text-truncate">{{ movie.title }}</h6>
                         <span class="badge bg-danger mb-1">{{ movie.category }}</span>
+                        {% if movie.is_adult %}<span class="badge bg-warning text-dark">18+</span>{% endif %}
                         <p class="card-text small text-muted mb-1">{{ (movie.release_date or '')[:4] }}</p>
                         <div class="mt-auto d-flex gap-2">
                             <a href="/admin/movie/edit/{{ movie._id }}" class="btn btn-sm btn-primary flex-grow-1">Edit</a>
@@ -1012,6 +1110,15 @@ admin_edit = """
                                 <option value="series" {{ 'selected' if movie.type == 'series' else '' }}>Web Series</option>
                             </select>
                         </div>
+                    </div>
+                    
+                    <!-- NEW: ADULT SELECTOR -->
+                    <div class="mb-3">
+                         <label class="form-label text-warning fw-bold">18+ Content Status</label>
+                         <select name="is_adult" class="form-select border-warning">
+                             <option value="false" {{ 'selected' if not movie.is_adult else '' }}>NO (Safe for Everyone)</option>
+                             <option value="true" {{ 'selected' if movie.is_adult else '' }}>YES (18+ Adult Content)</option>
+                         </select>
                     </div>
 
                     <div class="mb-3">
@@ -1126,6 +1233,12 @@ admin_edit = """
             typeSelect.value = 'series';
         } else {
             typeSelect.value = 'movie';
+        }
+        
+        // Auto Select Adult
+        let adultSelect = document.querySelector('select[name="is_adult"]');
+        if(data.adult === true) {
+            adultSelect.value = 'true';
         }
 
         // Language Map
@@ -1284,6 +1397,8 @@ def admin_edit_movie(movie_id):
             "release_date": request.form.get("release_date"),
             "vote_average": request.form.get("vote_average"),
             "type": request.form.get("type"),
+            # Capture Adult Status (string to boolean)
+            "is_adult": request.form.get("is_adult") == 'true',
             "updated_at": datetime.utcnow()
         }
         
@@ -1318,7 +1433,6 @@ def admin_edit_movie(movie_id):
                 pub_keyboard = [
                     [{"text": "📥 Download / Watch Online", "url": home_link}],
                     [{"text": "📢 Join Our Channel", "url": f"https://t.me/{BOT_USERNAME}"}] 
-                    # বি:দ্র: এখানে ম্যানুয়ালি আপনার চ্যানেল লিংক বা বট লিংক ব্যবহার করতে পারেন
                 ]
 
                 # টেলিগ্রামে পাঠানো
