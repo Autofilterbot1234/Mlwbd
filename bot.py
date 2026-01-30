@@ -711,7 +711,7 @@ index_template = """
 </html>
 """
 
-# --- DETAIL TEMPLATE (Fixed JS for API Shortener) ---
+# --- DETAIL TEMPLATE (Updated with CORS Fix) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -937,18 +937,28 @@ detail_template = """
         btn.disabled = true;
 
         try {
-            // API কল করা হচ্ছে
-            const apiUrl = `https://${domain}/api?api=${apiKey}&url=${encodeURIComponent(originalUrl)}`;
-            const response = await fetch(apiUrl);
+            // FIX: Call our own server-side proxy instead of external API directly to avoid CORS
+            const proxyUrl = `/api/shorten?api=${apiKey}&domain=${domain}&url=${encodeURIComponent(originalUrl)}`;
+            
+            const response = await fetch(proxyUrl);
             const data = await response.json();
 
-            if (data.status === 'success' && data.shortenedUrl) {
+            // Check for various response formats (shortenedUrl, link, short, etc.)
+            let finalLink = null;
+            
+            if (data.status === 'success' || data.shortenedUrl) {
+                finalLink = data.shortenedUrl || data.link || data.short;
+            } else if (data.shortenedUrl) {
+                finalLink = data.shortenedUrl;
+            }
+
+            if (finalLink) {
                 // সফল হলে শর্ট লিংকে রিডাইরেক্ট
-                window.location.href = data.shortenedUrl;
+                window.location.href = finalLink;
             } else {
                 // ফেইল হলে অরিজিনাল লিংকে
-                console.error("API returned error:", data);
-                alert("Shortener Error! Redirecting to original link...");
+                console.error("API returned error or unknown format:", data);
+                // alert("Shortener Error! Redirecting to original link...");
                 window.location.href = originalUrl;
             }
         } catch (error) {
@@ -1376,6 +1386,32 @@ def movie_detail(movie_id):
         return render_template_string(detail_template, movie=movie)
     except:
         return "Invalid ID", 400
+
+# --- SERVER SIDE SHORTENER PROXY (FIX FOR CORS) ---
+@app.route('/api/shorten')
+def shorten_link_proxy():
+    original_url = request.args.get('url')
+    api_key = request.args.get('api')
+    domain = request.args.get('domain')
+
+    if not original_url or not api_key or not domain:
+        return jsonify({'status': 'error', 'message': 'Missing parameters'})
+
+    # URL Encode the original URL for the API call
+    encoded_url = urllib.parse.quote(original_url)
+    api_url = f"https://{domain}/api?api={api_key}&url={encoded_url}"
+
+    try:
+        # Server-side request (Bypasses Browser CORS)
+        resp = requests.get(api_url, timeout=10)
+        try:
+            data = resp.json()
+            return jsonify(data)
+        except:
+            # If response is not JSON (some shorteners return raw text)
+            return jsonify({'status': 'error', 'raw': resp.text})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
 # ================================
 #        ADMIN ROUTES
