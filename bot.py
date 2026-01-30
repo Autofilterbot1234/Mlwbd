@@ -701,8 +701,6 @@ index_template = """
 </html>
 """
 
-# --- DETAIL TEMPLATE (Added Shortener & Tutorial Logic) ---
-detail_template = """
 # --- DETAIL TEMPLATE (Updated with JS for API Shortener) ---
 detail_template = """
 <!DOCTYPE html>
@@ -921,34 +919,27 @@ detail_template = """
 {% if ad_settings.popunder %}{{ ad_settings.popunder|safe }}{% endif %}
 
 <script>
-    // এই স্ক্রিপ্টটি API থেকে লিংক শর্ট করে রিডাইরেক্ট করবে
     async function processLink(btn, originalUrl, apiKey, domain) {
-        // বাটনের টেক্সট পরিবর্তন
         const originalText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Please Wait...';
         btn.style.opacity = "0.7";
         btn.disabled = true;
 
         try {
-            // API কল করা হচ্ছে
             const apiUrl = `https://${domain}/api?api=${apiKey}&url=${encodeURIComponent(originalUrl)}`;
             const response = await fetch(apiUrl);
             const data = await response.json();
 
             if (data.status === 'success' && data.shortenedUrl) {
-                // সফল হলে শর্ট লিংকে রিডাইরেক্ট
                 window.location.href = data.shortenedUrl;
             } else {
-                // ফেইল হলে অরিজিনাল লিংকে
                 alert("Shortener Error! Redirecting to original link...");
                 window.location.href = originalUrl;
             }
         } catch (error) {
             console.error("Shortener Error:", error);
-            // কোন এরর হলে অরিজিনাল লিংকে রিডাইরেক্ট
             window.location.href = originalUrl;
         } finally {
-            // যদি পেজ রিডাইরেক্ট না হয়, বাটন ঠিক করা
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.opacity = "1";
@@ -961,7 +952,6 @@ detail_template = """
 </body>
 </html>
 """
-
 # ================================
 #        ADMIN PANEL TEMPLATES
 # ================================
