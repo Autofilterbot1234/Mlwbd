@@ -7,6 +7,7 @@ import uuid
 import math
 import threading
 import time
+import urllib.parse
 from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
@@ -118,23 +119,24 @@ def get_episode_label(filename):
     if season: return f"Season {int(match_s.group(2))}"
     return None
 
-# --- NEW: Adult Content Detector ---
 def is_adult_content(title, genres=[]):
     """ টাইটেল এবং কিওয়ার্ড চেক করে ১৮+ ডিটেক্ট করে """
     adult_keywords = ['18+', 'adult', 'uncut', 'erotic', 'hot', 'sex', 'nude', 'romance', 'thriller', 'porn', 'xxx']
-    
-    # টাইটেল চেক
     for word in adult_keywords:
         if re.search(r'\b' + word + r'\b', title, re.IGNORECASE):
             return True
-    
-    # TMDB Adult Flag (যদি থাকে)
-    # জেনার চেক (Optional, ডিফল্টভাবে বন্ধ রাখা হয়েছে যাতে নরমাল মুভি ১৮+ না হয়ে যায়)
     return False
+
+# --- NEW: YouTube ID Extractor ---
+def extract_youtube_id(url):
+    """ ইউটিউব লিংক থেকে ভিডিও আইডি বের করার ফাংশন """
+    if not url: return None
+    regex = r'(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})'
+    match = re.search(regex, url)
+    return match.group(1) if match else None
 
 # --- BACKGROUND DELETE FUNCTION ---
 def delete_message_later(chat_id, message_id, delay):
-    """ নির্দিষ্ট সময় পর মেসেজ ডিলিট করার ফাংশন """
     time.sleep(delay)
     try:
         del_url = f"{TELEGRAM_API_URL}/deleteMessage"
@@ -158,11 +160,9 @@ def get_tmdb_details(title, content_type="movie", year=None):
             res = data["results"][0]
             m_id = res.get("id")
             
-            # --- Fetch Extra Details (Credits, Videos) ---
             details_url = f"https://api.themoviedb.org/3/{tmdb_type}/{m_id}?api_key={TMDB_API_KEY}&append_to_response=credits,videos"
             extra = requests.get(details_url, timeout=5).json()
 
-            # Extract Trailer
             trailer_key = None
             if extra.get('videos', {}).get('results'):
                 for vid in extra['videos']['results']:
@@ -170,7 +170,6 @@ def get_tmdb_details(title, content_type="movie", year=None):
                         trailer_key = vid['key']
                         break
             
-            # Extract Cast
             cast_list = []
             if extra.get('credits', {}).get('cast'):
                 for actor in extra['credits']['cast'][:6]:
@@ -179,14 +178,11 @@ def get_tmdb_details(title, content_type="movie", year=None):
                         'img': f"https://image.tmdb.org/t/p/w185{actor['profile_path']}" if actor.get('profile_path') else None
                     })
 
-            # Genres & Runtime
             genres = [g['name'] for g in extra.get('genres', [])]
             runtime = extra.get("runtime") or (extra.get("episode_run_time")[0] if extra.get("episode_run_time") else None)
 
             poster = f"https://image.tmdb.org/t/p/w500{res['poster_path']}" if res.get('poster_path') else None
             backdrop = f"https://image.tmdb.org/t/p/w1280{res['backdrop_path']}" if res.get('backdrop_path') else None
-
-            # TMDB এর নিজস্ব adult flag চেক
             is_adult_tmdb = res.get("adult", False)
 
             return {
@@ -201,7 +197,7 @@ def get_tmdb_details(title, content_type="movie", year=None):
                 "runtime": runtime, 
                 "trailer": trailer_key,  
                 "cast": cast_list,
-                "adult": is_adult_tmdb # Return flag
+                "adult": is_adult_tmdb
             }
     except Exception as e:
         print(f"TMDB Error: {e}")
@@ -218,11 +214,16 @@ def check_auth():
         return False
     return True
 
-# === Context Processor ===
+# === Context Processor (Updated for Link Tools) ===
 @app.context_processor
 def inject_globals():
     ad_codes = settings.find_one() or {}
-    return dict(ad_settings=ad_codes, BOT_USERNAME=BOT_USERNAME, site_name="MovieZone")
+    return dict(
+        ad_settings=ad_codes, 
+        BOT_USERNAME=BOT_USERNAME, 
+        site_name="MovieZone",
+        quote=urllib.parse.quote # URL Encoding helper
+    )
 
 # === TELEGRAM WEBHOOK ===
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
@@ -230,11 +231,7 @@ def telegram_webhook():
     update = request.get_json()
     if not update: return jsonify({'status': 'ignored'})
 
-    # ==========================================
-    # 🔴 আপনার চ্যানেলের লিংক এখানে বসান
-    # ==========================================
     MY_CHANNEL_LINK = "https://t.me/MovieZone_Official" 
-    # ==========================================
 
     if 'channel_post' in update:
         msg = update['channel_post']
@@ -278,11 +275,9 @@ def telegram_webhook():
         final_title = tmdb_data.get('title', search_title)
         quality = get_file_quality(file_name)
         
-        # --- Adult Check ---
         is_adult = tmdb_data.get('adult', False)
         if not is_adult:
             is_adult = is_adult_content(final_title)
-        # -------------------
 
         episode_label = get_episode_label(file_name)
         if content_type == "series" and not episode_label:
@@ -306,7 +301,7 @@ def telegram_webhook():
 
         existing_movie = movies.find_one({"title": final_title})
         movie_id = None
-        should_notify = False # ডিফল্টভাবে ফলস
+        should_notify = False
 
         if existing_movie:
             is_duplicate = False
@@ -337,7 +332,7 @@ def telegram_webhook():
                 "language": language,
                 "type": content_type,
                 "category": "Uncategorized",
-                "is_adult": is_adult, # Database e Save hobe
+                "is_adult": is_adult,
                 "files": [file_obj],
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
@@ -346,11 +341,9 @@ def telegram_webhook():
             movie_id = res.inserted_id
 
         if movie_id and WEBSITE_URL:
-            # সোর্স চ্যানেলের জন্য ডিরেক্ট লিংক
             direct_link = f"{WEBSITE_URL.rstrip('/')}/movie/{str(movie_id)}"
             home_link = WEBSITE_URL.rstrip('/')
             
-            # --- SOURCE CHANNEL BUTTON ---
             edit_payload = {
                 'chat_id': chat_id,
                 'message_id': msg['message_id'],
@@ -361,9 +354,6 @@ def telegram_webhook():
             try: requests.post(f"{TELEGRAM_API_URL}/editMessageReplyMarkup", json=edit_payload)
             except: pass
 
-            # ======================================================
-            #     SPAM PREVENTION LOGIC & POSTER CHECK
-            # ======================================================
             current_movie = movies.find_one({"_id": movie_id})
             last_notified = current_movie.get("last_notified")
             
@@ -372,13 +362,7 @@ def telegram_webhook():
                 time_diff = (datetime.utcnow() - last_notified).total_seconds()
                 if time_diff < NOTIFICATION_COOLDOWN:
                     is_spamming = True
-                    print(f"🚫 Notification Skipped for {final_title} (Spam Protection Active)")
 
-            # নোটিফিকেশন তখনই যাবে যদি:
-            # ১. পাবলিক চ্যানেল সেট করা থাকে
-            # ২. should_notify সত্য হয়
-            # ৩. পোস্টার থাকে (tmdb_data.get('poster'))
-            # ৪. স্প্যামিং না হয় (not is_spamming)
             if PUBLIC_CHANNEL_ID and should_notify and tmdb_data.get('poster') and not is_spamming:
                 notify_caption = f"🎬 *{escape_markdown(final_title)}*\n"
                 if episode_label: notify_caption += f"📌 {escape_markdown(episode_label)}\n"
@@ -406,13 +390,11 @@ def telegram_webhook():
                 try: 
                     resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
                     if resp.json().get('ok'):
-                        # সফল হলে last_notified টাইম আপডেট হবে
                         movies.update_one({"_id": movie_id}, {"$set": {"last_notified": datetime.utcnow()}})
                 except: pass
 
         return jsonify({'status': 'success'})
 
-    # --- USER MESSAGE HANDLING ---
     elif 'message' in update:
         msg = update['message']
         chat_id = msg.get('chat', {}).get('id')
@@ -486,9 +468,7 @@ index_template = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ site_name }} - Home</title>
-    <!-- CSS & Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Swiper CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
 
     <style>
@@ -503,17 +483,16 @@ index_template = """
         .navbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #161616; border-bottom: 1px solid #222; position: sticky; top: 0; z-index: 100; }
         .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
         
-        /* --- ADULT TOGGLE STYLE --- */
+        /* 18+ Toggle */
         .adult-control { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; background: #222; padding: 5px 10px; border-radius: 20px; border: 1px solid #333; }
         .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
         .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4caf50; transition: .4s; border-radius: 34px; } /* Green (Safe) */
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #4caf50; transition: .4s; border-radius: 34px; }
         .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
-        input:checked + .slider { background-color: #E50914; } /* Red (18+) */
+        input:checked + .slider { background-color: #E50914; }
         input:checked + .slider:before { transform: translateX(16px); }
 
-        /* --- BLUR LOGIC --- */
-        /* যখন body তে 'hide-adult' ক্লাস থাকবে (ডিফল্ট) */
+        /* Blur Logic */
         body.hide-adult .is-adult img { filter: blur(20px); pointer-events: none; }
         body.hide-adult .is-adult .card-title { opacity: 0.3; filter: blur(3px); }
         body.hide-adult .is-adult::after { 
@@ -571,12 +550,10 @@ index_template = """
         .ad-container { margin: 15px 0; text-align: center; overflow: hidden; }
     </style>
 </head>
-<body class="hide-adult"> <!-- DEFAULT: Hide Adult Content -->
+<body class="hide-adult"> 
 
 <nav class="navbar">
     <a href="/" class="logo">{{ site_name }}</a>
-    
-    <!-- 18+ ON/OFF Toggle -->
     <div class="adult-control">
         <span id="adult-label" style="color:#4caf50;">18+ OFF</span>
         <label class="switch">
@@ -642,7 +619,6 @@ index_template = """
 
     <div class="grid">
         {% for movie in movies %}
-        <!-- Add 'is-adult' class if marked in DB -->
         <a href="{{ url_for('movie_detail', movie_id=movie._id) }}" class="card {% if movie.is_adult %}is-adult{% endif %}">
             <span class="rating-badge">{{ movie.vote_average }}</span>
             <img src="{{ movie.poster or 'https://via.placeholder.com/300x450' }}" class="card-img" loading="lazy">
@@ -686,12 +662,10 @@ index_template = """
         loop: true
     });
 
-    // --- 18+ TOGGLE LOGIC ---
     const toggle = document.getElementById('adultToggle');
     const label = document.getElementById('adult-label');
     const body = document.body;
 
-    // Check LocalStorage on Load
     if (localStorage.getItem('adult_enabled') === 'true') {
         body.classList.remove('hide-adult');
         toggle.checked = true;
@@ -727,7 +701,7 @@ index_template = """
 </html>
 """
 
-# --- DETAIL TEMPLATE (Fixed Cast & Trailer) ---
+# --- DETAIL TEMPLATE (Added Shortener & Tutorial Logic) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -827,7 +801,6 @@ detail_template = """
     
     <div style="height: 20px;"></div>
     
-    <!-- 18+ Warning Alert -->
     {% if movie.is_adult %}
     <div style="background: #330000; color: #ff9999; padding: 10px; border-radius: 5px; border: 1px solid #990000; font-size: 0.85rem; margin-bottom: 15px; text-align: center;">
         <i class="fas fa-exclamation-triangle"></i> <b>WARNING:</b> This content contains 18+ Adult material.
@@ -901,7 +874,14 @@ detail_template = """
                     </div>
                 </div>
                 
-                <a href="https://t.me/{{ BOT_USERNAME }}?start={{ file.unique_code }}" class="btn-dl">
+                {% set tg_link = "https://t.me/" + BOT_USERNAME + "?start=" + file.unique_code %}
+                {% if ad_settings.shortener_domain and ad_settings.shortener_api %}
+                    {% set final_link = "https://" + ad_settings.shortener_domain + "/full?api=" + ad_settings.shortener_api + "&url=" + tg_link + "&type=2" %}
+                {% else %}
+                    {% set final_link = tg_link %}
+                {% endif %}
+
+                <a href="{{ final_link }}" class="btn-dl" target="_blank">
                     <i class="fab fa-telegram-plane"></i> 
                     {% if file.episode_label %}
                         Watch {{ file.episode_label }}
@@ -915,6 +895,18 @@ detail_template = """
             <p style="text-align: center; color: #666; font-size: 0.9rem;">No files added yet.</p>
         {% endif %}
     </div>
+
+    <!-- GLOBAL DOWNLOAD TUTORIAL -->
+    {% if ad_settings.tutorial_video %}
+    <div style="margin-top: 25px; padding: 0 5px;">
+        <div class="section-head"><i class="fas fa-graduation-cap"></i> How to Download</div>
+        <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 8px; border: 1px solid #333;">
+            <iframe style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border:0;" 
+                    src="https://www.youtube.com/embed/{{ ad_settings.tutorial_video }}" allowfullscreen></iframe>
+        </div>
+        <p style="text-align:center; font-size:0.8rem; color:#aaa; margin-top:5px;">Watch this video if you face any issues downloading.</p>
+    </div>
+    {% endif %}
     
     <div style="text-align: center; margin-top: 20px; font-size: 0.8rem; color: #555;">
         &copy; {{ site_name }} 2025
@@ -1022,7 +1014,6 @@ admin_dashboard = """
 </div>
 """
 
-# --- NEW CATEGORY MANAGEMENT TEMPLATE ---
 admin_categories = """
 <div class="container" style="max-width: 600px;">
     <h3 class="mb-4">Manage Categories</h3>
@@ -1045,7 +1036,6 @@ admin_categories = """
 </div>
 """
 
-# --- ULTIMATE ADMIN EDIT TEMPLATE (Auto-Import) ---
 admin_edit = """
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -1112,7 +1102,6 @@ admin_edit = """
                         </div>
                     </div>
                     
-                    <!-- NEW: ADULT SELECTOR -->
                     <div class="mb-3">
                          <label class="form-label text-warning fw-bold">18+ Content Status</label>
                          <select name="is_adult" class="form-select border-warning">
@@ -1183,7 +1172,6 @@ admin_edit = """
                  return;
             }
 
-            // Auto-Click if only 1 result matches perfectly (Optional enhancement)
             let html = '<div class="list-group list-group-flush">';
             data.results.forEach(item => {
                 let title = item.title || item.name;
@@ -1191,7 +1179,6 @@ admin_edit = """
                 let type = item.media_type || 'movie';
                 let poster = item.poster_path ? 'https://image.tmdb.org/t/p/w92' + item.poster_path : 'https://via.placeholder.com/92x138?text=No+Img';
                 
-                // Secure JSON string
                 let cleanItem = JSON.stringify(item).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
 
                 html += `<button type="button" class="list-group-item list-group-item-action d-flex align-items-center gap-2 p-2" onclick='fillForm(${cleanItem})'>
@@ -1211,13 +1198,11 @@ admin_edit = """
     }
 
     function fillForm(data) {
-        // Basic Fields
         document.querySelector('input[name="title"]').value = data.title || data.name;
         document.querySelector('textarea[name="overview"]').value = data.overview || '';
         document.querySelector('input[name="release_date"]').value = data.release_date || data.first_air_date || '';
         document.querySelector('input[name="vote_average"]').value = data.vote_average || '';
 
-        // Images
         if(data.poster_path) {
             let pUrl = 'https://image.tmdb.org/t/p/w500' + data.poster_path;
             document.querySelector('input[name="poster"]').value = pUrl;
@@ -1227,7 +1212,6 @@ admin_edit = """
             document.querySelector('input[name="backdrop"]').value = 'https://image.tmdb.org/t/p/w1280' + data.backdrop_path;
         }
 
-        // Auto Select Type (Movie/Series)
         let typeSelect = document.querySelector('select[name="type"]');
         if(data.media_type === 'tv') {
             typeSelect.value = 'series';
@@ -1235,41 +1219,59 @@ admin_edit = """
             typeSelect.value = 'movie';
         }
         
-        // Auto Select Adult
         let adultSelect = document.querySelector('select[name="is_adult"]');
         if(data.adult === true) {
             adultSelect.value = 'true';
         }
 
-        // Language Map
         if(data.original_language) {
              let langMap = {'en': 'English', 'hi': 'Hindi', 'bn': 'Bengali', 'ko': 'Korean', 'ja': 'Japanese', 'ta': 'Tamil', 'te': 'Telugu', 'es': 'Spanish', 'fr': 'French'};
              let fullLang = langMap[data.original_language] || data.original_language.toUpperCase();
              document.querySelector('input[name="language"]').value = fullLang;
         }
 
-        // Show Success
         const resDiv = document.getElementById('tmdbResults');
         resDiv.innerHTML = '<div class="alert alert-success mt-2 text-center"><i class="fas fa-check-circle"></i> Data Applied!<br>Please check fields and click <b>Update</b>.</div>';
     }
 </script>
 """
 
+# --- ADMIN SETTINGS TEMPLATE (Added Shortener & Tutorial Fields) ---
 admin_settings = """
 <div class="container" style="max-width: 800px;">
     <h3 class="mb-4">Website Settings</h3>
     <div class="card p-4">
         <form method="POST">
+            
+            <div class="row mb-4 border-bottom pb-4">
+                <h5 class="text-primary"><i class="fas fa-link"></i> Link Shortener (Monetization)</h5>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Shortener Domain</label>
+                    <input type="text" name="shortener_domain" class="form-control" placeholder="e.g. gplinks.com" value="{{ settings.shortener_domain or '' }}">
+                    <div class="form-text">Do not put https:// or slash. Just domain.</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">API Key</label>
+                    <input type="text" name="shortener_api" class="form-control" placeholder="Paste your API Key here" value="{{ settings.shortener_api or '' }}">
+                </div>
+                <div class="form-text text-warning"><i class="fas fa-info-circle"></i> If you set these, all download links will be automatically converted to Short Links. Clear them to disable.</div>
+            </div>
+
+            <div class="mb-4 border-bottom pb-4">
+                <h5 class="text-info"><i class="fab fa-youtube"></i> Download Tutorial</h5>
+                <label class="form-label">YouTube Video Link</label>
+                <input type="text" name="tutorial_video" class="form-control" placeholder="e.g. https://youtu.be/..." value="{{ settings.tutorial_video_url or '' }}">
+                <div class="form-text">This video will appear on every movie page to teach users how to download.</div>
+            </div>
+
             <div class="mb-4">
-                <label class="form-label fw-bold text-warning">Banner Ad Code (HTML)</label>
-                <div class="form-text mb-2">This code appears on the Homepage and Download Page.</div>
-                <textarea name="banner_ad" class="form-control" rows="5" style="font-family: monospace;">{{ settings.banner_ad }}</textarea>
+                <label class="form-label fw-bold">Banner Ad Code (HTML)</label>
+                <textarea name="banner_ad" class="form-control" rows="3">{{ settings.banner_ad }}</textarea>
             </div>
             
             <div class="mb-4">
-                <label class="form-label fw-bold text-warning">Popunder / Scripts (HTML/JS)</label>
-                <div class="form-text mb-2">Use this for Popunders, Google Analytics, or other hidden scripts.</div>
-                <textarea name="popunder" class="form-control" rows="5" style="font-family: monospace;">{{ settings.popunder }}</textarea>
+                <label class="form-label fw-bold">Popunder / Scripts (HTML/JS)</label>
+                <textarea name="popunder" class="form-control" rows="3">{{ settings.popunder }}</textarea>
             </div>
             
             <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Settings</button>
@@ -1288,29 +1290,17 @@ def home():
     per_page = 16
     query = request.args.get('q', '').strip()
     cat_filter = request.args.get('cat', '').strip()
-    type_filter = request.args.get('type', '').strip() # movie or series
+    type_filter = request.args.get('type', '').strip()
     
     db_query = {}
-    
-    # --- SEARCH LOGIC ---
-    if query:
-        db_query["title"] = {"$regex": query, "$options": "i"}
-    
-    # --- CATEGORY FILTER ---
-    if cat_filter:
-        db_query["category"] = cat_filter
-    
-    # --- TYPE FILTER (Movie vs Series) ---
-    if type_filter:
-        # ডাটাবেসে 'type' ফিল্ড চেক করবে (case-insensitive)
-        db_query["type"] = type_filter
+    if query: db_query["title"] = {"$regex": query, "$options": "i"}
+    if cat_filter: db_query["category"] = cat_filter
+    if type_filter: db_query["type"] = type_filter
 
-    # মোট মুভি এবং পেজিনেশন
     total_movies = movies.count_documents(db_query)
     movie_list = list(movies.find(db_query).sort([('updated_at', -1), ('_id', -1)]).skip((page-1)*per_page).limit(per_page))
     cat_list = list(categories.find())
     
-    # --- SLIDER LOGIC ---
     slider_movies = []
     if not query and not cat_filter and not type_filter:
         slider_movies = list(movies.find({"backdrop": {"$ne": None}}).sort([('created_at', -1)]).limit(5))
@@ -1357,7 +1347,6 @@ def admin_home():
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_dashboard)
     return render_template_string(full_html, movies=movie_list, page=page, q=q, active='dashboard')
 
-# নতুন ক্যাটাগরি রাউট
 @app.route('/admin/categories', methods=['GET', 'POST'])
 def admin_cats():
     if not check_auth(): return Response('Login Required', 401)
@@ -1385,7 +1374,6 @@ def admin_edit_movie(movie_id):
     movie = movies.find_one({"_id": ObjectId(movie_id)})
     
     if request.method == 'POST':
-        # ১. ফর্ম থেকে ডাটা নেওয়া
         new_poster = request.form.get("poster")
         update_data = {
             "title": request.form.get("title"),
@@ -1397,25 +1385,15 @@ def admin_edit_movie(movie_id):
             "release_date": request.form.get("release_date"),
             "vote_average": request.form.get("vote_average"),
             "type": request.form.get("type"),
-            # Capture Adult Status (string to boolean)
             "is_adult": request.form.get("is_adult") == 'true',
             "updated_at": datetime.utcnow()
         }
         
-        # ২. ডাটাবেস আপডেট করা
         movies.update_one({"_id": ObjectId(movie_id)}, {"$set": update_data})
         
-        # ========================================================
-        # 🔔 LATE NOTIFICATION LOGIC (যদি আগে মিস হয়ে থাকে)
-        # ========================================================
-        # যদি আগে নোটিফিকেশন না গিয়ে থাকে (last_notified নেই) এবং এখন পোস্টার দেওয়া হয়েছে
         if not movie.get('last_notified') and new_poster and PUBLIC_CHANNEL_ID:
-            
-            # লেটেস্ট ফাইলটি বের করা (ক্যাপশনের জন্য)
             latest_file = movie.get('files', [])[-1] if movie.get('files') else None
-            
             if latest_file:
-                # ক্যাপশন তৈরি
                 caption = f"🎬 *{escape_markdown(update_data['title'])}*\n"
                 if latest_file.get('episode_label'): 
                     caption += f"📌 {escape_markdown(latest_file['episode_label'])}\n"
@@ -1429,13 +1407,11 @@ def admin_edit_movie(movie_id):
                 home_link = WEBSITE_URL.rstrip('/')
                 caption += f"🔗 *Download Now:* [Click Here]({home_link})"
 
-                # বাটন
                 pub_keyboard = [
                     [{"text": "📥 Download / Watch Online", "url": home_link}],
                     [{"text": "📢 Join Our Channel", "url": f"https://t.me/{BOT_USERNAME}"}] 
                 ]
 
-                # টেলিগ্রামে পাঠানো
                 notify_payload = {
                     'chat_id': PUBLIC_CHANNEL_ID,
                     'parse_mode': 'Markdown',
@@ -1447,16 +1423,13 @@ def admin_edit_movie(movie_id):
                 try:
                     resp = requests.post(f"{TELEGRAM_API_URL}/sendPhoto", json=notify_payload)
                     if resp.json().get('ok'):
-                        # সফল হলে টাইম আপডেট করে দাও যাতে বারবার না যায়
                         movies.update_one({"_id": ObjectId(movie_id)}, {"$set": {"last_notified": datetime.utcnow()}})
-                        print(f"✅ Late notification sent for {update_data['title']}")
                 except Exception as e:
                     print(f"❌ Failed to send late notification: {e}")
 
         return redirect(url_for('admin_home'))
         
     cat_list = list(categories.find())
-    
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_edit)
     return render_template_string(full_html, movie=movie, categories=cat_list, active='dashboard')
 
@@ -1471,41 +1444,43 @@ def admin_settings_page():
     if not check_auth(): return Response('Login Required', 401)
     
     if request.method == 'POST':
+        # YouTube Link Clean Logic
+        raw_yt = request.form.get("tutorial_video")
+        clean_yt = extract_youtube_id(raw_yt) if raw_yt else ""
+
         settings.update_one({}, {"$set": {
+            "shortener_domain": request.form.get("shortener_domain").strip(),
+            "shortener_api": request.form.get("shortener_api").strip(),
+            "tutorial_video_url": raw_yt, # Save Full URL
+            "tutorial_video": clean_yt,   # Save ID for Embed
             "banner_ad": request.form.get("banner_ad"),
             "popunder": request.form.get("popunder")
         }}, upsert=True)
         return redirect(url_for('admin_settings_page'))
     
     curr_settings = settings.find_one() or {}
-    
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_settings)
     return render_template_string(full_html, settings=curr_settings, active='settings')
 
-# --- ULTIMATE TMDB API ROUTE (Auto Link Detection) ---
 @app.route('/admin/api/tmdb')
 def api_tmdb_search():
     if not check_auth(): return jsonify({'error': 'Unauthorized'}), 401
     query = request.args.get('q', '').strip()
     if not query or not TMDB_API_KEY: return jsonify({'error': 'No query provided'})
 
-    # 1. Check for TMDB URL (e.g., themoviedb.org/movie/12345)
     tmdb_url_match = re.search(r'themoviedb\.org/(movie|tv)/(\d+)', query)
     if tmdb_url_match:
-        m_type = tmdb_url_match.group(1) # 'movie' or 'tv'
+        m_type = tmdb_url_match.group(1) 
         m_id = tmdb_url_match.group(2)
-        
         url = f"https://api.themoviedb.org/3/{m_type}/{m_id}?api_key={TMDB_API_KEY}"
         try:
             resp = requests.get(url)
             if resp.status_code == 200:
                 data = resp.json()
-                data['media_type'] = m_type # Force type from URL
+                data['media_type'] = m_type
                 return jsonify({'results': [data]})
-        except:
-            pass # Failed, move to next logic
+        except: pass
 
-    # 2. Check for IMDb ID inside ANY Text/Link (e.g., ...title/tt123/...)
     imdb_match = re.search(r'(tt\d+)', query)
     if imdb_match:
         imdb_id = imdb_match.group(1)
@@ -1516,47 +1491,34 @@ def api_tmdb_search():
             if 'movie_results' in data and data['movie_results']: 
                 for item in data['movie_results']: item['media_type'] = 'movie'
                 results.extend(data['movie_results'])
-                
             if 'tv_results' in data and data['tv_results']:
                 for item in data['tv_results']: item['media_type'] = 'tv'
                 results.extend(data['tv_results'])
+            if results: return jsonify({'results': results})
+        except: pass
 
-            if results: 
-                return jsonify({'results': results})
-            else:
-                return jsonify({'error': f'IMDb ID ({imdb_id}) found, but not linked to TMDB yet. Use TMDB Link instead.'})
-        except Exception as e:
-            return jsonify({'error': f'IMDb Lookup Error: {str(e)}'})
-
-    # 3. Check for Pure ID (Numbers only)
     if query.isdigit():
         tmdb_id = query
         try:
-            # Try Movie First
             url_movie = f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}"
             resp = requests.get(url_movie)
             if resp.status_code == 200:
                 data = resp.json()
                 data['media_type'] = 'movie'
                 return jsonify({'results': [data]})
-            
-            # Try TV Series Second
             url_tv = f"https://api.themoviedb.org/3/tv/{tmdb_id}?api_key={TMDB_API_KEY}"
             resp = requests.get(url_tv)
             if resp.status_code == 200:
                 data = resp.json()
                 data['media_type'] = 'tv'
                 return jsonify({'results': [data]})
-        except:
-            pass
+        except: pass
 
-    # 4. Normal Name Search (Fallback)
     url = f"https://api.themoviedb.org/3/search/multi?api_key={TMDB_API_KEY}&query={requests.utils.quote(query)}"
     try:
         data = requests.get(url).json()
         return jsonify(data)
-    except:
-        return jsonify({'error': 'Search Failed'})
+    except: return jsonify({'error': 'Search Failed'})
 
 if __name__ == '__main__':
     if WEBSITE_URL and BOT_TOKEN:
