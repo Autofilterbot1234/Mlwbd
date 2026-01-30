@@ -703,6 +703,8 @@ index_template = """
 
 # --- DETAIL TEMPLATE (Added Shortener & Tutorial Logic) ---
 detail_template = """
+# --- DETAIL TEMPLATE (Updated with JS for API Shortener) ---
+detail_template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -751,6 +753,8 @@ detail_template = """
             gap: 8px;
             font-size: 0.95rem;
             transition: 0.3s;
+            cursor: pointer;
+            border: none;
         }
         .btn-dl:hover { background: #0077b5; transform: translateY(-2px); }
 
@@ -875,20 +879,21 @@ detail_template = """
                 </div>
                 
                 {% set tg_link = "https://t.me/" + BOT_USERNAME + "?start=" + file.unique_code %}
+                
                 {% if ad_settings.shortener_domain and ad_settings.shortener_api %}
-                    {% set final_link = "https://" + ad_settings.shortener_domain + "/full?api=" + ad_settings.shortener_api + "&url=" + tg_link + "&type=2" %}
+                    <!-- JS Button for API Shorteners -->
+                    <button class="btn-dl" onclick="processLink(this, '{{ tg_link }}', '{{ ad_settings.shortener_api }}', '{{ ad_settings.shortener_domain }}')">
+                        <i class="fab fa-telegram-plane"></i> 
+                        {% if file.episode_label %}Watch {{ file.episode_label }}{% else %}Get File{% endif %}
+                    </button>
                 {% else %}
-                    {% set final_link = tg_link %}
+                    <!-- Direct Link -->
+                    <a href="{{ tg_link }}" class="btn-dl" target="_blank">
+                        <i class="fab fa-telegram-plane"></i> 
+                        {% if file.episode_label %}Watch {{ file.episode_label }}{% else %}Get File{% endif %}
+                    </a>
                 {% endif %}
 
-                <a href="{{ final_link }}" class="btn-dl" target="_blank">
-                    <i class="fab fa-telegram-plane"></i> 
-                    {% if file.episode_label %}
-                        Watch {{ file.episode_label }}
-                    {% else %}
-                        Get File
-                    {% endif %}
-                </a>
             </div>
             {% endfor %}
         {% else %}
@@ -914,6 +919,44 @@ detail_template = """
 </div>
 
 {% if ad_settings.popunder %}{{ ad_settings.popunder|safe }}{% endif %}
+
+<script>
+    // এই স্ক্রিপ্টটি API থেকে লিংক শর্ট করে রিডাইরেক্ট করবে
+    async function processLink(btn, originalUrl, apiKey, domain) {
+        // বাটনের টেক্সট পরিবর্তন
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Please Wait...';
+        btn.style.opacity = "0.7";
+        btn.disabled = true;
+
+        try {
+            // API কল করা হচ্ছে
+            const apiUrl = `https://${domain}/api?api=${apiKey}&url=${encodeURIComponent(originalUrl)}`;
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+
+            if (data.status === 'success' && data.shortenedUrl) {
+                // সফল হলে শর্ট লিংকে রিডাইরেক্ট
+                window.location.href = data.shortenedUrl;
+            } else {
+                // ফেইল হলে অরিজিনাল লিংকে
+                alert("Shortener Error! Redirecting to original link...");
+                window.location.href = originalUrl;
+            }
+        } catch (error) {
+            console.error("Shortener Error:", error);
+            // কোন এরর হলে অরিজিনাল লিংকে রিডাইরেক্ট
+            window.location.href = originalUrl;
+        } finally {
+            // যদি পেজ রিডাইরেক্ট না হয়, বাটন ঠিক করা
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.opacity = "1";
+                btn.disabled = false;
+            }, 3000);
+        }
+    }
+</script>
 
 </body>
 </html>
