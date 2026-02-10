@@ -26,14 +26,14 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BOT_USERNAME = os.getenv("BOT_USERNAME")
 PUBLIC_CHANNEL_ID = os.getenv("PUBLIC_CHANNEL_ID")
-SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID")
+SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID") # রিপোর্ট এখানে আসবে
 WEBSITE_URL = os.getenv("WEBSITE_URL")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# অটো ডিলিট সময় (সেকেন্ডে) - ১০ মিনিট = ৬০০ সেকেন্ড
+# অটো ডিলিট সময় (সেকেন্ডে) - ১০ মিনিট
 DELETE_TIMEOUT = 600 
 
-# নোটিফিকেশন কুলডাউন (সেকেন্ডে) - ৩০ মিনিট = ১৮০০ সেকেন্ড
+# নোটিফিকেশন কুলডাউন (সেকেন্ডে) - ৩০ মিনিট
 NOTIFICATION_COOLDOWN = 1800 
 
 # এডমিন ক্রেডেনশিয়াল
@@ -127,9 +127,8 @@ def is_adult_content(title, genres=[]):
             return True
     return False
 
-# --- NEW: YouTube ID Extractor ---
+# --- YouTube ID Extractor ---
 def extract_youtube_id(url):
-    """ ইউটিউব লিংক থেকে ভিডিও আইডি বের করার ফাংশন """
     if not url: return None
     regex = r'(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})'
     match = re.search(regex, url)
@@ -141,7 +140,6 @@ def delete_message_later(chat_id, message_id, delay):
     try:
         del_url = f"{TELEGRAM_API_URL}/deleteMessage"
         requests.post(del_url, json={"chat_id": chat_id, "message_id": message_id})
-        print(f"🗑️ Auto Deleted Message {message_id} from {chat_id}")
     except Exception as e:
         print(f"⚠️ Failed to delete message: {e}")
 
@@ -214,7 +212,6 @@ def check_auth():
         return False
     return True
 
-# === Context Processor (Updated for Link Tools) ===
 @app.context_processor
 def inject_globals():
     ad_codes = settings.find_one() or {}
@@ -222,7 +219,7 @@ def inject_globals():
         ad_settings=ad_codes, 
         BOT_USERNAME=BOT_USERNAME, 
         site_name="MovieZone",
-        quote=urllib.parse.quote # URL Encoding helper
+        quote=urllib.parse.quote 
     )
 
 # --- ANTI-BAN: CRAWLER BLOCKER ---
@@ -230,16 +227,15 @@ def inject_globals():
 def block_bots():
     # পরিচিত ক্রলার এবং কপিরাইট বট ব্লক করা হচ্ছে
     user_agent = request.headers.get('User-Agent', '').lower()
-    blocked_bots = ['googlebot', 'bingbot', 'ahrefsbot', 'semrushbot', 'mj12bot', 'dotbot', 'petalbot', 'bytespider', 'dmca', 'copyright', 'monitor']
+    blocked_bots = ['googlebot', 'bingbot', 'ahrefsbot', 'semrushbot', 'mj12bot', 'dotbot', 'petalbot', 'bytespider', 'dmca', 'copyright', 'monitor', 'internet-archive']
     
     if any(bot in user_agent for bot in blocked_bots):
-        # বটদের 404 পেজ দেখানো হবে যাতে তারা মনে করে সাইট বন্ধ
+        # বটদের 404 পেজ দেখানো হবে
         abort(404)
 
 # --- ROBOTS.TXT (Stop Indexing) ---
 @app.route('/robots.txt')
 def robots_txt():
-    # সার্চ ইঞ্জিন ইনডেক্সিং বন্ধ করা
     return Response("User-agent: *\nDisallow: /", mimetype="text/plain")
 
 
@@ -249,7 +245,7 @@ def telegram_webhook():
     update = request.get_json()
     if not update: return jsonify({'status': 'ignored'})
 
-    MY_CHANNEL_LINK = "https://t.me/TGLinkBase" 
+    MY_CHANNEL_LINK = "https://t.me/MovieZone_Official" 
 
     if 'channel_post' in update:
         msg = update['channel_post']
@@ -380,9 +376,7 @@ def telegram_webhook():
             
             is_spamming = False
             if last_notified:
-                # Handle datetime compatibility
                 now = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
-                # Ensure last_notified is timezone aware if now is
                 if hasattr(datetime, 'UTC') and last_notified.tzinfo is None:
                     last_notified = last_notified.replace(tzinfo=datetime.UTC)
                 
@@ -562,6 +556,7 @@ index_template = """
         .cat-btn { background: var(--red-btn); color: white; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #990000; box-shadow: 0 3px 0 #800000; transition: 0.1s; white-space: nowrap; }
         .cat-btn:active { transform: translateY(3px); box-shadow: none; }
         .cat-btn.active { background: #ffcc00; color: #000; border-color: #cc9900; box-shadow: 0 3px 0 #997700; }
+        .request-btn { background: #28a745; border-color: #28a745; }
 
         .search-wrapper { padding: 5px 15px 15px 15px; background: #121212; display: flex; justify-content: center; }
         .big-search-box { width: 100%; max-width: 600px; display: flex; background: #1e252b; border: 2px solid #00c3ff; border-radius: 8px; overflow: hidden; }
@@ -628,6 +623,7 @@ index_template = """
         {% if 'Bangla' in cat.name %}🇧🇩{% elif 'Hindi' in cat.name %}🇮🇳{% elif 'English' in cat.name %}🇺🇸{% else %}<i class="fas fa-tag"></i>{% endif %} {{ cat.name }}
     </a>
     {% endfor %}
+    <a href="https://t.me/{{ BOT_USERNAME }}" class="cat-btn request-btn"><i class="fas fa-comment-dots"></i> Request Movie</a>
 </div>
 
 <div class="search-wrapper">
@@ -757,7 +753,7 @@ index_template = """
 </html>
 """
 
-# --- DETAIL TEMPLATE (Updated with DMCA & NoIndex) ---
+# --- DETAIL TEMPLATE (Updated with DMCA, NoIndex & Broken Report) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -821,6 +817,9 @@ detail_template = """
         
         .dmca-link { color: #555; font-size: 11px; text-decoration: none; margin-top: 30px; display: block; text-align: center; }
         .dmca-link:hover { text-decoration: underline; color: #777; }
+        
+        .report-btn { color: #dc3545; background: none; border: 1px solid #dc3545; padding: 5px 10px; border-radius: 4px; font-size: 0.75rem; margin-top: 10px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .report-btn:hover { background: #dc3545; color: white; }
 
         @media (min-width: 600px) {
             .movie-info { flex-direction: row; text-align: left; align-items: flex-end; padding: 0 20px; }
@@ -911,7 +910,11 @@ detail_template = """
     </div>
 
     <div class="file-section">
-        <div class="section-head"><i class="fas fa-download"></i> Download Links</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;">
+             <span class="section-head" style="margin:0;"><i class="fas fa-download"></i> Download Links</span>
+             <a href="/report/broken/{{ movie._id }}" class="report-btn" onclick="return confirm('Report broken link for this movie?')"><i class="fas fa-bug"></i> Report Broken Link</a>
+        </div>
+
         {% if movie.files %}
             {% for file in movie.files|reverse %}
             <div class="file-item">
@@ -1478,6 +1481,27 @@ def dmca_delete(movie_id):
         """
     except:
         return "Error deleting file", 500
+
+# --- NEW: REPORT BROKEN LINK ROUTE ---
+@app.route('/report/broken/<movie_id>')
+def report_broken(movie_id):
+    """ Sends a notification to the admin channel about broken link """
+    try:
+        movie = movies.find_one({"_id": ObjectId(movie_id)})
+        if movie and SOURCE_CHANNEL_ID:
+            report_msg = f"⚠️ *BROKEN LINK REPORTED*\n\n🎬 Title: {movie.get('title')}\n🆔 ID: {movie_id}\n\nPlease check the files."
+            payload = {'chat_id': SOURCE_CHANNEL_ID, 'text': report_msg, 'parse_mode': 'Markdown'}
+            requests.post(f"{TELEGRAM_API_URL}/sendMessage", json=payload)
+        
+        return """
+        <div style='text-align:center; padding:50px; font-family:sans-serif;'>
+            <h1 style='color:#007bff;'>Report Sent!</h1>
+            <p>Admin has been notified. We will fix the link soon.</p>
+            <a href='javascript:history.back()' style='background:#333; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Go Back</a>
+        </div>
+        """
+    except:
+        return "Error sending report", 500
 
 # --- SERVER SIDE SHORTENER PROXY (FIX FOR CORS) ---
 @app.route('/api/shorten')
