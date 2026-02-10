@@ -8,7 +8,7 @@ import math
 import threading
 import time
 import urllib.parse
-from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify
+from flask import Flask, render_template_string, request, redirect, url_for, Response, jsonify, abort
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
@@ -225,13 +225,31 @@ def inject_globals():
         quote=urllib.parse.quote # URL Encoding helper
     )
 
+# --- ANTI-BAN: CRAWLER BLOCKER ---
+@app.before_request
+def block_bots():
+    # পরিচিত ক্রলার এবং কপিরাইট বট ব্লক করা হচ্ছে
+    user_agent = request.headers.get('User-Agent', '').lower()
+    blocked_bots = ['googlebot', 'bingbot', 'ahrefsbot', 'semrushbot', 'mj12bot', 'dotbot', 'petalbot', 'bytespider', 'dmca', 'copyright', 'monitor']
+    
+    if any(bot in user_agent for bot in blocked_bots):
+        # বটদের 404 পেজ দেখানো হবে যাতে তারা মনে করে সাইট বন্ধ
+        abort(404)
+
+# --- ROBOTS.TXT (Stop Indexing) ---
+@app.route('/robots.txt')
+def robots_txt():
+    # সার্চ ইঞ্জিন ইনডেক্সিং বন্ধ করা
+    return Response("User-agent: *\nDisallow: /", mimetype="text/plain")
+
+
 # === TELEGRAM WEBHOOK ===
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
 def telegram_webhook():
     update = request.get_json()
     if not update: return jsonify({'status': 'ignored'})
 
-    MY_CHANNEL_LINK = "https://t.me/MovieZone_Official" 
+    MY_CHANNEL_LINK = "https://t.me/TGLinkBase" 
 
     if 'channel_post' in update:
         msg = update['channel_post']
@@ -471,11 +489,39 @@ def telegram_webhook():
 #        FRONTEND TEMPLATES
 # ================================
 
+# --- FAKE HOME PAGE FOR STEALTH MODE ---
+fake_home_template = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Md. Rahim - Web Developer</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f4; color: #333; text-align: center; padding: 50px; }
+        h1 { color: #555; }
+        .card { background: white; padding: 20px; max-width: 600px; margin: 0 auto; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .btn { display: inline-block; padding: 10px 20px; background: #007BFF; color: white; text-decoration: none; border-radius: 5px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>👨‍💻 Md. Rahim</h1>
+        <p>Full Stack Web Developer | Python | Flask | MongoDB</p>
+        <p>I build scalable web applications and automation bots.</p>
+        <a href="mailto:contact@example.com" class="btn">Contact Me</a>
+    </div>
+</body>
+</html>
+"""
+
 index_template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- ANTIBAN: GOOGLE INDEXING OFF -->
+    <meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ site_name }} - Home</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -711,12 +757,13 @@ index_template = """
 </html>
 """
 
-# --- DETAIL TEMPLATE (Updated with CORS Fix) ---
+# --- DETAIL TEMPLATE (Updated with DMCA & NoIndex) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="robots" content="noindex, nofollow"> <!-- ANTIBAN -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{ movie.title }} - Download</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -771,6 +818,9 @@ detail_template = """
         .q-1080p { background: #6f42c1; color: #fff; }
         .q-720p { background: #0d6efd; color: #fff; }
         .q-480p { background: #198754; color: #fff; }
+        
+        .dmca-link { color: #555; font-size: 11px; text-decoration: none; margin-top: 30px; display: block; text-align: center; }
+        .dmca-link:hover { text-decoration: underline; color: #777; }
 
         @media (min-width: 600px) {
             .movie-info { flex-direction: row; text-align: left; align-items: flex-end; padding: 0 20px; }
@@ -921,6 +971,11 @@ detail_template = """
     </div>
     {% endif %}
     
+    <!-- AUTO DMCA REMOVAL BUTTON -->
+    <a href="/dmca/report/{{ movie._id }}" class="dmca-link" onclick="return confirm('⚠️ Are you the Copyright Owner?\\n\\nThis will DELETE the content from our database immediately.\\n\\nProceed?')">
+        Report Copyright / Remove Content (DMCA)
+    </a>
+
     <div style="text-align: center; margin-top: 20px; font-size: 0.8rem; color: #555;">
         &copy; {{ site_name }} 2025
     </div>
@@ -1297,13 +1352,26 @@ admin_edit = """
 </script>
 """
 
-# --- ADMIN SETTINGS TEMPLATE ---
+# --- ADMIN SETTINGS TEMPLATE (Updated with Stealth Mode) ---
 admin_settings = """
 <div class="container" style="max-width: 800px;">
     <h3 class="mb-4">Website Settings</h3>
     <div class="card p-4">
         <form method="POST">
             
+            <!-- STEALTH MODE TOGGLE -->
+            <div class="form-check form-switch mb-4 p-3 border rounded border-warning bg-dark">
+                <input class="form-check-input" type="checkbox" name="stealth_mode" id="stealth" style="transform: scale(1.5); margin-right: 15px;" {{ 'checked' if settings.stealth_mode else '' }}>
+                <label class="form-check-label text-warning fw-bold" for="stealth">
+                    <i class="fas fa-user-secret"></i> STEALTH MODE (Anti-Ban Protection)
+                </label>
+                <div class="form-text text-light mt-2">
+                    <b>কিভাবে কাজ করে:</b> এটি অন করলে হোমপেইজে মুভি দেখা যাবে না। একটি সাধারণ পোর্টফোলিও সাইট দেখাবে। 
+                    Render/Heroku মডারেটররা ভাববে এটি পার্সোনাল সাইট। মুভি শুধু টেলিগ্রামের ডিরেক্ট লিংক দিয়ে দেখা যাবে।
+                    <b>Render ব্যান থেকে বাঁচতে এটি সবসময় ON রাখা ভালো।</b>
+                </div>
+            </div>
+
             <div class="row mb-4 border-bottom pb-4">
                 <h5 class="text-primary"><i class="fas fa-link"></i> Link Shortener (Monetization)</h5>
                 <div class="col-md-6 mb-3">
@@ -1315,7 +1383,6 @@ admin_settings = """
                     <label class="form-label">API Key</label>
                     <input type="text" name="shortener_api" class="form-control" placeholder="Paste your API Key here" value="{{ settings.shortener_api or '' }}">
                 </div>
-                <div class="form-text text-warning"><i class="fas fa-info-circle"></i> If set, buttons will fetch a short link via API. Clear to disable.</div>
             </div>
 
             <div class="mb-4 border-bottom pb-4">
@@ -1347,6 +1414,14 @@ admin_settings = """
 
 @app.route('/')
 def home():
+    # --- STEALTH MODE CHECK ---
+    curr_settings = settings.find_one() or {}
+    if curr_settings.get('stealth_mode', False):
+        # যদি Stealth Mode অন থাকে, তবে চেক করুন ইউজার এডমিন কিনা
+        # যদি এডমিন না হয়, তবে ফেইক হোমপেজ দেখান
+        if not check_auth():
+            return render_template_string(fake_home_template)
+
     page = int(request.args.get('page', 1))
     per_page = 16
     query = request.args.get('q', '').strip()
@@ -1382,10 +1457,27 @@ def view_series():
 def movie_detail(movie_id):
     try:
         movie = movies.find_one({"_id": ObjectId(movie_id)})
-        if not movie: return "Movie Not Found", 404
+        if not movie: return "Content Removed or Not Found", 404
         return render_template_string(detail_template, movie=movie)
     except:
         return "Invalid ID", 400
+
+# --- NEW: AUTO DMCA DELETE ROUTE ---
+@app.route('/dmca/report/<movie_id>')
+def dmca_delete(movie_id):
+    """ Allows instant removal of content to comply with DMCA without admin intervention """
+    try:
+        movies.delete_one({"_id": ObjectId(movie_id)})
+        return """
+        <div style='text-align:center; padding:50px; font-family:sans-serif;'>
+            <h1 style='color:green;'>Content Removed Successfully</h1>
+            <p>The content has been permanently deleted from our database in compliance with DMCA.</p>
+            <p>We respect copyright laws and take immediate action.</p>
+            <a href='/' style='background:#333; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>Go Home</a>
+        </div>
+        """
+    except:
+        return "Error deleting file", 500
 
 # --- SERVER SIDE SHORTENER PROXY (FIX FOR CORS) ---
 @app.route('/api/shorten')
@@ -1539,11 +1631,13 @@ def admin_settings_page():
         raw_yt = request.form.get("tutorial_video")
         clean_yt = extract_youtube_id(raw_yt) if raw_yt else ""
 
+        # Update Settings
         settings.update_one({}, {"$set": {
+            "stealth_mode": request.form.get("stealth_mode") == "on",  # NEW: Stealth Toggle
             "shortener_domain": request.form.get("shortener_domain").strip(),
             "shortener_api": request.form.get("shortener_api").strip(),
-            "tutorial_video_url": raw_yt, # Save Full URL
-            "tutorial_video": clean_yt,   # Save ID for Embed
+            "tutorial_video_url": raw_yt, 
+            "tutorial_video": clean_yt,   
             "banner_ad": request.form.get("banner_ad"),
             "popunder": request.form.get("popunder")
         }}, upsert=True)
