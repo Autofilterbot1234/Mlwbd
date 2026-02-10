@@ -30,6 +30,10 @@ SOURCE_CHANNEL_ID = os.getenv("SOURCE_CHANNEL_ID") # রিপোর্ট এ�
 WEBSITE_URL = os.getenv("WEBSITE_URL")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# আপনার টেলিগ্রাম অ্যাডমিন ইউজারনেম (রিকোয়েস্ট বাটন এর জন্য)
+# এটি পরিবর্তন করে আপনার ইউজারনেম দিন (যেমন: https://t.me/RahimAdmin)
+ADMIN_CONTACT_URL = "https://t.me/CineZoneBDBot" 
+
 # অটো ডিলিট সময় (সেকেন্ডে) - ১০ মিনিট
 DELETE_TIMEOUT = 600 
 
@@ -143,6 +147,73 @@ def delete_message_later(chat_id, message_id, delay):
     except Exception as e:
         print(f"⚠️ Failed to delete message: {e}")
 
+# --- AUTO IMPORT & SCHEDULER (NEW UPDATE) ---
+def auto_import_movies():
+    """ TMDB থেকে অটোমেটিক নতুন এবং ট্রেন্ডিং মুভি ফেচ করে ডেটাবেসে সেভ করবে """
+    if not TMDB_API_KEY:
+        print("⚠️ TMDB API Key Missing. Auto-import skipped.")
+        return
+
+    print("🔄 Auto-Import Started: Fetching Trending & Now Playing...")
+    
+    # ২ ধরনের লিস্ট আনা হবে: ১. বর্তমানে চলছে (Now Playing), ২. ট্রেন্ডিং (Trending)
+    api_urls = [
+        f"https://api.themoviedb.org/3/movie/now_playing?api_key={TMDB_API_KEY}&language=en-US&page=1",
+        f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_API_KEY}"
+    ]
+
+    count = 0
+    now_utc = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
+
+    for url in api_urls:
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get('results', []):
+                    title = item.get('title')
+                    # যদি টাইটেল না থাকে বা ডেটাবেসে অলরেডি থাকে, তাহলে স্কিপ করবে
+                    if not title or movies.find_one({"title": title}):
+                        continue
+                    
+                    # মুভি ডিটেইলস সাজানো
+                    new_movie = {
+                        "tmdb_id": item.get("id"),
+                        "title": title,
+                        "overview": item.get("overview"),
+                        "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
+                        "backdrop": f"https://image.tmdb.org/t/p/w1280{item.get('backdrop_path')}" if item.get('backdrop_path') else None,
+                        "release_date": item.get("release_date"),
+                        "vote_average": item.get("vote_average"),
+                        "genres": [], # জেনরা পরে এডিট করা যাবে
+                        "language": "English", # ডিফল্ট
+                        "type": "movie",
+                        "category": "Uncategorized",
+                        "is_adult": item.get("adult", False),
+                        "files": [], # শুরুতে কোনো ফাইল থাকবে না (Request Button দেখাবে)
+                        "created_at": now_utc,
+                        "updated_at": now_utc
+                    }
+                    
+                    movies.insert_one(new_movie)
+                    count += 1
+        except Exception as e:
+            print(f"❌ Auto-Import Error: {e}")
+            
+    if count > 0:
+        print(f"✅ Auto-Import Finished! Added {count} new movies.")
+    else:
+        print("✅ Auto-Import Checked: No new movies found.")
+
+def start_scheduler():
+    """ প্রতি ৬ ঘণ্টা পর পর অটোমেটিক মুভি চেক করবে """
+    while True:
+        try:
+            auto_import_movies()
+        except Exception as e:
+            print(f"Scheduler Error: {e}")
+        time.sleep(21600) # 21600 সেকেন্ড = ৬ ঘণ্টা
+
 # --- TMDB FUNCTION ---
 def get_tmdb_details(title, content_type="movie", year=None):
     if not TMDB_API_KEY: return {"title": title}
@@ -245,7 +316,7 @@ def telegram_webhook():
     update = request.get_json()
     if not update: return jsonify({'status': 'ignored'})
 
-    MY_CHANNEL_LINK = "https://t.me/MovieZone_Official" 
+    MY_CHANNEL_LINK = "https://t.me/TGLinkBase" 
 
     if 'channel_post' in update:
         msg = update['channel_post']
@@ -316,6 +387,7 @@ def telegram_webhook():
             "added_at": current_time
         }
 
+        # ডেটাবেস চেক: মুভি আগে থেকেই আছে কি না (Auto Import বা আগের আপলোড)
         existing_movie = movies.find_one({"title": final_title})
         movie_id = None
         should_notify = False
@@ -753,7 +825,7 @@ index_template = """
 </html>
 """
 
-# --- DETAIL TEMPLATE (Updated with DMCA, NoIndex & Broken Report) ---
+# --- DETAIL TEMPLATE (Updated with REQUEST BUTTON) ---
 detail_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -912,7 +984,9 @@ detail_template = """
     <div class="file-section">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #333; padding-bottom:10px;">
              <span class="section-head" style="margin:0;"><i class="fas fa-download"></i> Download Links</span>
-             <a href="/report/broken/{{ movie._id }}" class="report-btn" onclick="return confirm('Report broken link for this movie?')"><i class="fas fa-bug"></i> Report Broken Link</a>
+             {% if movie.files %}
+                <a href="/report/broken/{{ movie._id }}" class="report-btn" onclick="return confirm('Report broken link for this movie?')"><i class="fas fa-bug"></i> Report Broken Link</a>
+             {% endif %}
         </div>
 
         {% if movie.files %}
@@ -958,7 +1032,24 @@ detail_template = """
             </div>
             {% endfor %}
         {% else %}
-            <p style="text-align: center; color: #666; font-size: 0.9rem;">No files added yet.</p>
+            <!-- NO FILES - SHOW REQUEST BUTTON -->
+            <div style="text-align: center; padding: 30px 10px;">
+                <i class="fas fa-folder-open" style="font-size: 40px; color: #444; margin-bottom: 15px;"></i>
+                <h3 style="font-size: 1.2rem; color: #ccc;">No Download Links Available Yet</h3>
+                <p style="font-size: 0.9rem; color: #777; margin-bottom: 20px;">This movie has been listed but files are not uploaded yet.</p>
+                
+                <a href="{{ ADMIN_CONTACT_URL or '#' }}" target="_blank" class="btn-dl" style="background: #e50914; animation: pulse 2s infinite; width: auto; display: inline-flex; padding: 10px 30px;">
+                    <i class="fas fa-paper-plane"></i> Request Admin to Upload
+                </a>
+            </div>
+            
+            <style>
+                @keyframes pulse {
+                    0% { box-shadow: 0 0 0 0 rgba(229, 9, 20, 0.7); }
+                    70% { box-shadow: 0 0 0 10px rgba(229, 9, 20, 0); }
+                    100% { box-shadow: 0 0 0 0 rgba(229, 9, 20, 0); }
+                }
+            </style>
         {% endif %}
     </div>
 
@@ -1461,7 +1552,8 @@ def movie_detail(movie_id):
     try:
         movie = movies.find_one({"_id": ObjectId(movie_id)})
         if not movie: return "Content Removed or Not Found", 404
-        return render_template_string(detail_template, movie=movie)
+        # Inject Admin Contact URL into template context
+        return render_template_string(detail_template, movie=movie, ADMIN_CONTACT_URL=ADMIN_CONTACT_URL)
     except:
         return "Invalid ID", 400
 
@@ -1728,6 +1820,10 @@ def api_tmdb_search():
         data = requests.get(url).json()
         return jsonify(data)
     except: return jsonify({'error': 'Search Failed'})
+
+# --- START THREAD BEFORE APP RUN ---
+# অ্যাপ রান হওয়ার আগে ব্যাকগ্রাউন্ড প্রসেস চালু করা
+threading.Thread(target=start_scheduler, daemon=True).start()
 
 if __name__ == '__main__':
     if WEBSITE_URL and BOT_TOKEN:
