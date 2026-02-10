@@ -32,7 +32,7 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # আপনার টেলিগ্রাম অ্যাডমিন ইউজারনেম (রিকোয়েস্ট বাটন এর জন্য)
 # এটি পরিবর্তন করে আপনার ইউজারনেম দিন (যেমন: https://t.me/RahimAdmin)
-ADMIN_CONTACT_URL = "https://t.me/CineZoneBDBot" 
+ADMIN_CONTACT_URL = "https://t.me/MovieZone_Official" 
 
 # অটো ডিলিট সময় (সেকেন্ডে) - ১০ মিনিট
 DELETE_TIMEOUT = 600 
@@ -147,7 +147,7 @@ def delete_message_later(chat_id, message_id, delay):
     except Exception as e:
         print(f"⚠️ Failed to delete message: {e}")
 
-# --- AUTO IMPORT & SCHEDULER (NEW UPDATE) ---
+# --- AUTO IMPORT FUNCTION (DUPLICATE PROOF) ---
 def auto_import_movies():
     """ TMDB থেকে অটোমেটিক নতুন এবং ট্রেন্ডিং মুভি ফেচ করে ডেটাবেসে সেভ করবে """
     if not TMDB_API_KEY:
@@ -156,7 +156,6 @@ def auto_import_movies():
 
     print("🔄 Auto-Import Started: Fetching Trending & Now Playing...")
     
-    # ২ ধরনের লিস্ট আনা হবে: ১. বর্তমানে চলছে (Now Playing), ২. ট্রেন্ডিং (Trending)
     api_urls = [
         f"https://api.themoviedb.org/3/movie/now_playing?api_key={TMDB_API_KEY}&language=en-US&page=1",
         f"https://api.themoviedb.org/3/trending/movie/day?api_key={TMDB_API_KEY}"
@@ -172,25 +171,36 @@ def auto_import_movies():
                 data = response.json()
                 for item in data.get('results', []):
                     title = item.get('title')
-                    # যদি টাইটেল না থাকে বা ডেটাবেসে অলরেডি থাকে, তাহলে স্কিপ করবে
-                    if not title or movies.find_one({"title": title}):
+                    tmdb_id = item.get("id")
+
+                    if not title: continue
+
+                    # ডুপ্লিকেট চেক: টাইটেল অথবা TMDB ID মিললে স্কিপ করবে
+                    existing = movies.find_one({
+                        "$or": [
+                            {"tmdb_id": tmdb_id},
+                            {"title": title}
+                        ]
+                    })
+                    
+                    if existing:
                         continue
                     
                     # মুভি ডিটেইলস সাজানো
                     new_movie = {
-                        "tmdb_id": item.get("id"),
+                        "tmdb_id": tmdb_id,
                         "title": title,
                         "overview": item.get("overview"),
                         "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
                         "backdrop": f"https://image.tmdb.org/t/p/w1280{item.get('backdrop_path')}" if item.get('backdrop_path') else None,
                         "release_date": item.get("release_date"),
                         "vote_average": item.get("vote_average"),
-                        "genres": [], # জেনরা পরে এডিট করা যাবে
-                        "language": "English", # ডিফল্ট
+                        "genres": [],
+                        "language": "English",
                         "type": "movie",
                         "category": "Uncategorized",
                         "is_adult": item.get("adult", False),
-                        "files": [], # শুরুতে কোনো ফাইল থাকবে না (Request Button দেখাবে)
+                        "files": [], 
                         "created_at": now_utc,
                         "updated_at": now_utc
                     }
@@ -296,12 +306,10 @@ def inject_globals():
 # --- ANTI-BAN: CRAWLER BLOCKER ---
 @app.before_request
 def block_bots():
-    # পরিচিত ক্রলার এবং কপিরাইট বট ব্লক করা হচ্ছে
     user_agent = request.headers.get('User-Agent', '').lower()
     blocked_bots = ['googlebot', 'bingbot', 'ahrefsbot', 'semrushbot', 'mj12bot', 'dotbot', 'petalbot', 'bytespider', 'dmca', 'copyright', 'monitor', 'internet-archive']
     
     if any(bot in user_agent for bot in blocked_bots):
-        # বটদের 404 পেজ দেখানো হবে
         abort(404)
 
 # --- ROBOTS.TXT (Stop Indexing) ---
@@ -316,7 +324,7 @@ def telegram_webhook():
     update = request.get_json()
     if not update: return jsonify({'status': 'ignored'})
 
-    MY_CHANNEL_LINK = "https://t.me/TGLinkBase" 
+    MY_CHANNEL_LINK = "https://t.me/MovieZone_Official" 
 
     if 'channel_post' in update:
         msg = update['channel_post']
@@ -373,7 +381,6 @@ def telegram_webhook():
         language = detect_language(raw_input)
         unique_code = str(uuid.uuid4())[:8]
 
-        # Use timezone-aware UTC
         current_time = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
 
         file_obj = {
@@ -408,6 +415,7 @@ def telegram_webhook():
         else:
             should_notify = True
             new_movie = {
+                "tmdb_id": tmdb_data.get('tmdb_id'), # ID সেভ করা হচ্ছে
                 "title": final_title,
                 "overview": tmdb_data.get('overview'),
                 "poster": tmdb_data.get('poster'),
@@ -1641,6 +1649,44 @@ def admin_home():
     
     full_html = admin_base.replace('<!-- CONTENT_GOES_HERE -->', admin_dashboard)
     return render_template_string(full_html, movies=movie_list, page=page, q=q, active='dashboard')
+
+# --- DUPLICATE CLEANER ROUTE (One-Click Fix) ---
+@app.route('/admin/cleanup')
+def admin_cleanup():
+    """ ডেটাবেস থেকে ডুপ্লিকেট এবং ফাঁকা মুভি রিমুভ করার টুল """
+    if not check_auth(): return "Unauthorized", 401
+    
+    # 1. সব মুভি নিয়ে আসা
+    all_movies = list(movies.find({}))
+    
+    # 2. সর্টিং: যাদের ফাইল আছে তারা আগে থাকবে, এরপর ID অনুযায়ী
+    # (files array length descending, then ID descending)
+    all_movies.sort(key=lambda x: (len(x.get('files', [])), x.get('_id')), reverse=True)
+
+    seen_titles = set()
+    duplicates_removed = 0
+
+    for m in all_movies:
+        title = m.get('title')
+        if not title: continue
+        
+        if title in seen_titles:
+            # যদি এই নামের মুভি আগেই লিস্টে (seen_titles) ঢুকে থাকে,
+            # তার মানে বর্তমানটা ডুপ্লিকেট (এবং সম্ভবত ফাইল নেই কারণ আমরা ফাইলওয়ালাদের আগে রেখেছি)
+            movies.delete_one({'_id': m['_id']})
+            duplicates_removed += 1
+        else:
+            # প্রথমবার দেখা গেলে লিস্টে রাখলাম
+            seen_titles.add(title)
+
+    return f"""
+    <div style="text-align:center; padding:50px; font-family:sans-serif;">
+        <h1 style="color:green;">✅ Cleanup Successful!</h1>
+        <h3>Removed {duplicates_removed} Duplicate Movies.</h3>
+        <p>Your database is now clean. Only unique movies remain.</p>
+        <a href="/admin" style="background:#333; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;">Back to Admin</a>
+    </div>
+    """
 
 @app.route('/admin/categories', methods=['GET', 'POST'])
 def admin_cats():
